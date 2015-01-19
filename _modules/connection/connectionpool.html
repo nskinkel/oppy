@@ -1,0 +1,247 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>connection.connectionpool &mdash; oppy 0.1 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <link rel="top" title="oppy 0.1 documentation" href="../../index.html" />
+    <link rel="up" title="Module code" href="../index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for connection.connectionpool</h1><div class="highlight"><pre>
+<span class="c"># Copyright 2014, 2015, Nik Kinkel</span>
+<span class="c"># See LICENSE for licensing information</span>
+
+<span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">.. topic:: Details</span>
+
+<span class="sd">    The ConnectionPool manages a pool of TLS connections to entry nodes. The</span>
+<span class="sd">    main job of the ConnectionPool is to hand out TLS connections to</span>
+<span class="sd">    requesting circuits and keep track of all the open connections. TLS</span>
+<span class="sd">    connections to the same entry nodes are shared among circuits.</span>
+
+<span class="sd">&#39;&#39;&#39;</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+
+<span class="kn">from</span> <span class="nn">twisted.internet</span> <span class="kn">import</span> <span class="n">defer</span><span class="p">,</span> <span class="n">endpoints</span>
+<span class="kn">from</span> <span class="nn">twisted.internet.ssl</span> <span class="kn">import</span> <span class="n">ClientContextFactory</span>
+
+<span class="kn">from</span> <span class="nn">OpenSSL</span> <span class="kn">import</span> <span class="n">SSL</span>
+
+<span class="kn">from</span> <span class="nn">oppy.connection.connection</span> <span class="kn">import</span> <span class="n">Connection</span>
+<span class="kn">from</span> <span class="nn">oppy.connection.definitions</span> <span class="kn">import</span> <span class="n">V3_CIPHER_STRING</span>
+
+
+<div class="viewcode-block" id="TLSClientContextFactory"><a class="viewcode-back" href="../../docs/connection/connectionpool.html#connection.connectionpool.TLSClientContextFactory">[docs]</a><span class="k">class</span> <span class="nc">TLSClientContextFactory</span><span class="p">(</span><span class="n">ClientContextFactory</span><span class="p">):</span>
+    
+    <span class="n">isClient</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="n">method</span> <span class="o">=</span> <span class="n">SSL</span><span class="o">.</span><span class="n">TLSv1_METHOD</span>
+    <span class="n">_contextFactory</span> <span class="o">=</span> <span class="n">SSL</span><span class="o">.</span><span class="n">Context</span>
+
+<div class="viewcode-block" id="TLSClientContextFactory.getContext"><a class="viewcode-back" href="../../docs/connection/connectionpool.html#connection.connectionpool.TLSClientContextFactory.getContext">[docs]</a>    <span class="k">def</span> <span class="nf">getContext</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">context</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_contextFactory</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">method</span><span class="p">)</span>
+        <span class="n">context</span><span class="o">.</span><span class="n">set_cipher_list</span><span class="p">(</span><span class="n">V3_CIPHER_STRING</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">context</span>
+
+</div></div>
+<div class="viewcode-block" id="ConnectionPool"><a class="viewcode-back" href="../../docs/connection/connectionpool.html#connection.connectionpool.ConnectionPool">[docs]</a><span class="k">class</span> <span class="nc">ConnectionPool</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;A pool of TLS connections to entry nodes.&#39;&#39;&#39;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;Connection pool created.&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_connection_map</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pending_map</span> <span class="o">=</span> <span class="p">{}</span>
+
+<div class="viewcode-block" id="ConnectionPool.getConnection"><a class="viewcode-back" href="../../docs/connection/connectionpool.html#connection.connectionpool.ConnectionPool.getConnection">[docs]</a>    <span class="k">def</span> <span class="nf">getConnection</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">relay</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Return a deferred which will fire (if connection attempt is</span>
+<span class="sd">        successful) with a Connection Protocol made to *relay*.</span>
+
+<span class="sd">        There are three general cases to handle for incoming connection</span>
+<span class="sd">        requests:</span>
+
+<span class="sd">            1. We already have an open TLS connection to the requested relay.</span>
+<span class="sd">               In this case, immediately callback the deferred with the</span>
+<span class="sd">               open connection.</span>
+<span class="sd">            2. We&#39;re currently trying to connect to this relay. In this case,</span>
+<span class="sd">               add the request to a pending request list for this relay.</span>
+<span class="sd">               When the connection is made successfully, callback all</span>
+<span class="sd">               pending request deferreds with the Connection, or errback</span>
+<span class="sd">               all pending request deferreds on failure.</span>
+<span class="sd">            3. We have no open or pending connections to this relay (i.e.</span>
+<span class="sd">               this is the first connection request to this relay). In this</span>
+<span class="sd">               case, create a new list of pending requests for this connection</span>
+<span class="sd">               and add the current request. Create an SSL endpoint and add an</span>
+<span class="sd">               appropriate callback and errback. If the request is successful,</span>
+<span class="sd">               callback all pending requests with the open connection when</span>
+<span class="sd">               it opens; errback all pending requests on failure.</span>
+<span class="sd">        </span>
+<span class="sd">        :param stem.descriptor.server_descriptor.RelayDescriptor relay:</span>
+<span class="sd">            relay to make a TLS connection to</span>
+<span class="sd">        :returns: **twisted.internet.defer.Deferred** which, on success, will</span>
+<span class="sd">            callback with an oppy.connection.connection.Connection Protocol</span>
+<span class="sd">            object</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="kn">from</span> <span class="nn">twisted.internet</span> <span class="kn">import</span> <span class="n">reactor</span>
+        
+        <span class="n">d</span> <span class="o">=</span> <span class="n">defer</span><span class="o">.</span><span class="n">Deferred</span><span class="p">()</span>
+        <span class="c"># case 1</span>
+        <span class="k">if</span> <span class="n">relay</span><span class="o">.</span><span class="n">fingerprint</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_connection_map</span><span class="p">:</span>
+            <span class="n">d</span><span class="o">.</span><span class="n">callback</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_connection_map</span><span class="p">[</span><span class="n">relay</span><span class="o">.</span><span class="n">fingerprint</span><span class="p">])</span>
+        <span class="c"># case 2</span>
+        <span class="k">elif</span> <span class="n">relay</span><span class="o">.</span><span class="n">fingerprint</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pending_map</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_pending_map</span><span class="p">[</span><span class="n">relay</span><span class="o">.</span><span class="n">fingerprint</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+        <span class="c"># case 3</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">connection_defer</span> <span class="o">=</span> <span class="n">endpoints</span><span class="o">.</span><span class="n">connectProtocol</span><span class="p">(</span>
+                        <span class="n">endpoints</span><span class="o">.</span><span class="n">SSL4ClientEndpoint</span><span class="p">(</span><span class="n">reactor</span><span class="p">,</span> <span class="n">relay</span><span class="o">.</span><span class="n">address</span><span class="p">,</span>
+                                                     <span class="n">relay</span><span class="o">.</span><span class="n">or_port</span><span class="p">,</span>
+                                                     <span class="n">TLSClientContextFactory</span><span class="p">()),</span>
+                        <span class="n">Connection</span><span class="p">(</span><span class="n">relay</span><span class="p">)</span>
+            <span class="p">)</span>
+            <span class="n">connection_defer</span><span class="o">.</span><span class="n">addCallback</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_connectionSucceeded</span><span class="p">,</span>
+                                         <span class="n">relay</span><span class="o">.</span><span class="n">fingerprint</span><span class="p">)</span>
+            <span class="n">connection_defer</span><span class="o">.</span><span class="n">addErrback</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_connectionFailed</span><span class="p">,</span>
+                                        <span class="n">relay</span><span class="o">.</span><span class="n">fingerprint</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_pending_map</span><span class="p">[</span><span class="n">relay</span><span class="o">.</span><span class="n">fingerprint</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_pending_map</span><span class="p">[</span><span class="n">relay</span><span class="o">.</span><span class="n">fingerprint</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">d</span>
+</div>
+    <span class="k">def</span> <span class="nf">_connectionSucceeded</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">result</span><span class="p">,</span> <span class="n">fingerprint</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;For every pending request for this connection, callback the request</span>
+<span class="sd">        deferred with this open connection, then remove this connection</span>
+<span class="sd">        from the pending map and add to the connection map.</span>
+<span class="sd">        </span>
+<span class="sd">        Called when the TLS connection to the IP of relay with</span>
+<span class="sd">        *fingerprint* opens successfully.</span>
+
+<span class="sd">        :param oppy.connection.connection.Connection result: the successfully</span>
+<span class="sd">            opened connection</span>
+<span class="sd">        :param str fingerprint: fingerprint of relay we have connected to</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">for</span> <span class="n">request</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pending_map</span><span class="p">[</span><span class="n">fingerprint</span><span class="p">]:</span>
+            <span class="n">request</span><span class="o">.</span><span class="n">callback</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+        <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pending_map</span><span class="p">[</span><span class="n">fingerprint</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_connection_map</span><span class="p">[</span><span class="n">fingerprint</span><span class="p">]</span> <span class="o">=</span> <span class="n">result</span>
+
+    <span class="k">def</span> <span class="nf">_connectionFailed</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reason</span><span class="p">,</span> <span class="n">fingerprint</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;For every pending request for this connection, errback the request</span>
+<span class="sd">        deferred. Remove this connection from the pending map.</span>
+
+<span class="sd">        Called when the TLS connection to the IP of relay with</span>
+<span class="sd">        *fingerprint* fails.</span>
+
+<span class="sd">        :param reason reason: reason this connection failed</span>
+<span class="sd">        :param str fingerprint: fingerprint of the relay this connection</span>
+<span class="sd">            failed to</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Connection to {} failed: {}.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">fingerprint</span><span class="p">,</span> <span class="n">reason</span><span class="p">)</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">request</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pending_map</span><span class="p">[</span><span class="n">fingerprint</span><span class="p">]:</span>
+            <span class="n">request</span><span class="o">.</span><span class="n">errback</span><span class="p">(</span><span class="n">reason</span><span class="p">)</span>
+        <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pending_map</span><span class="p">[</span><span class="n">fingerprint</span><span class="p">]</span>
+
+<div class="viewcode-block" id="ConnectionPool.removeConnection"><a class="viewcode-back" href="../../docs/connection/connectionpool.html#connection.connectionpool.ConnectionPool.removeConnection">[docs]</a>    <span class="k">def</span> <span class="nf">removeConnection</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fingerprint</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Remove the connection to relay with *fingerprint* from the</span>
+<span class="sd">        connection pool.</span>
+
+<span class="sd">        :param str fingerprint: fingerprint of connection to remove</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">if</span> <span class="n">fingerprint</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_connection_map</span><span class="p">:</span>
+            <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">_connection_map</span><span class="p">[</span><span class="n">fingerprint</span><span class="p">]</span>
+</div>
+<div class="viewcode-block" id="ConnectionPool.shouldDestroyConnection"><a class="viewcode-back" href="../../docs/connection/connectionpool.html#connection.connectionpool.ConnectionPool.shouldDestroyConnection">[docs]</a>    <span class="k">def</span> <span class="nf">shouldDestroyConnection</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fingerprint</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Return **True** if ConnectionPool thinks we should destroy the</span>
+<span class="sd">        TLS connection to relay with *fingerprint*.</span>
+
+<span class="sd">        Called when the number of circuits on a connection drops to zero.</span>
+
+<span class="sd">        .. note:: For now, we always return True. Eventually, we may</span>
+<span class="sd">            want to maintain a connection to any guards, even if there are</span>
+<span class="sd">            no currently open circuits.</span>
+
+<span class="sd">        :param str fingerprint: fingerprint of connection to check</span>
+<span class="sd">        :returns: **bool** **True** if we think this connection should be</span>
+<span class="sd">            destroyed</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">return</span> <span class="bp">True</span></div></div>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

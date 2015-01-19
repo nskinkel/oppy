@@ -1,0 +1,387 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>path.path &mdash; oppy 0.1 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <link rel="top" title="oppy 0.1 documentation" href="../../index.html" />
+    <link rel="up" title="Module code" href="../index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for path.path</h1><div class="highlight"><pre>
+<span class="c"># Copyright 2014, 2015, Nik Kinkel</span>
+<span class="c"># See LICENSE for licensing information</span>
+
+<span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">.. topic:: PathConstraints</span>
+
+<span class="sd">    PathConstraints represent constraints on a path through the Tor network.</span>
+<span class="sd">    They are constructed by passing a dict of {&#39;keyword&#39;: &#39;value&#39;} as an</span>
+<span class="sd">    argument for each node. A list of filters is built for each node. Then,</span>
+<span class="sd">    using the satisfy() method, a PathConstraints object can select only</span>
+<span class="sd">    the RelayDescriptors that satisfy the proper constraints.</span>
+
+<span class="sd">    Path constraint objects can be used as follows (suppose *relays* is a</span>
+<span class="sd">    list of RelayDescriptors):</span>
+
+<span class="sd">    &gt;&gt;&gt; p = PathConstraints(entry={&#39;ntor&#39;: True, &#39;flags&#39;: [&#39;Fast&#39;, &#39;Guard&#39;]},</span>
+<span class="sd">    &gt;&gt;&gt;                     middle={&#39;ntor&#39;: True, &#39;flags&#39;: [&#39;Stable&#39;],</span>
+<span class="sd">    &gt;&gt;&gt;                     exit={&#39;ntor&#39;: True, &#39;flags&#39;: [&#39;Exit&#39;],</span>
+<span class="sd">    &gt;&gt;&gt;                           &#39;exit_to_port&#39;: 443})</span>
+<span class="sd">    &gt;&gt;&gt; entry_candidates = p.satisfy(node=&#39;entry&#39;, relays)</span>
+
+<span class="sd">    *entry_candidates* would now be a list of all relays that satisfy the</span>
+<span class="sd">    entry node constraints.</span>
+
+
+<span class="sd">.. topic:: PathSelector</span>
+
+<span class="sd">    PathSelector objects simplify choosing a full path. PathSelectors take</span>
+<span class="sd">    a PathConstraints object as an argument to the constructor. When</span>
+<span class="sd">    getPath() is called, PathSelectors use these PathConstraints to build</span>
+<span class="sd">    a path through the Tor network, taking care of some additional</span>
+<span class="sd">    concerns including:</span>
+<span class="sd">        </span>
+<span class="sd">        - not selecting two relays in the same family</span>
+<span class="sd">        - not selecting two relays in the same /16</span>
+<span class="sd">        - not selecting the same relay in a path twice</span>
+
+<span class="sd">    getPath() returns a deferred that will fire with the chosen Path object.</span>
+
+<span class="sd">&#39;&#39;&#39;</span>
+<span class="kn">import</span> <span class="nn">random</span>
+
+<span class="kn">from</span> <span class="nn">collections</span> <span class="kn">import</span> <span class="n">namedtuple</span>
+
+<span class="kn">import</span> <span class="nn">ipaddress</span>
+
+<span class="kn">from</span> <span class="nn">twisted.internet</span> <span class="kn">import</span> <span class="n">defer</span>
+
+<span class="kn">import</span> <span class="nn">stem</span>
+<span class="kn">from</span> <span class="nn">stem.descriptor.server_descriptor</span> <span class="kn">import</span> <span class="n">DEFAULT_IPV6_EXIT_POLICY</span>
+
+<span class="kn">from</span> <span class="nn">oppy.path.exceptions</span> <span class="kn">import</span> <span class="n">UnknownPathConstraint</span>
+<span class="kn">from</span> <span class="nn">oppy.util.tools</span> <span class="kn">import</span> <span class="n">dispatch</span>
+
+
+<span class="n">Path</span> <span class="o">=</span> <span class="n">namedtuple</span><span class="p">(</span><span class="s">&quot;Path&quot;</span><span class="p">,</span> <span class="p">(</span><span class="s">&quot;entry&quot;</span><span class="p">,</span>
+                           <span class="s">&quot;middle&quot;</span><span class="p">,</span>
+                           <span class="s">&quot;exit&quot;</span><span class="p">,))</span>
+
+
+<div class="viewcode-block" id="PathConstraints"><a class="viewcode-back" href="../../docs/path/path.html#path.path.PathConstraints">[docs]</a><span class="k">class</span> <span class="nc">PathConstraints</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;Represent a set of path constraints.&#39;&#39;&#39;</span>
+
+    <span class="n">keywords</span> <span class="o">=</span> <span class="nb">set</span><span class="p">([</span>
+        <span class="s">&#39;flags&#39;</span><span class="p">,</span>
+        <span class="s">&#39;ntor&#39;</span><span class="p">,</span>
+        <span class="s">&#39;exit_IPv6&#39;</span><span class="p">,</span>
+        <span class="s">&#39;exit_to_IP&#39;</span><span class="p">,</span>
+        <span class="s">&#39;exit_to_port&#39;</span><span class="p">,</span>
+        <span class="s">&#39;exit_to_IP_and_port&#39;</span><span class="p">,</span>
+        <span class="s">&#39;fingerprint&#39;</span><span class="p">,</span>
+    <span class="p">])</span>
+
+    <span class="n">_build_table</span> <span class="o">=</span> <span class="p">{}</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">entry</span><span class="p">,</span> <span class="n">middle</span><span class="p">,</span> <span class="nb">exit</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        :param dict entry: dict of &#39;keyword: value&#39; arguments to build</span>
+<span class="sd">            filters for the entry node</span>
+<span class="sd">        :param dict middle: dict of &#39;keyword: value&#39; arguments to build</span>
+<span class="sd">            filters for the middle node</span>
+<span class="sd">        :param dict exit: dict of &#39;keyword: value&#39; arguments to build</span>
+<span class="sd">            filters for the exit node</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">entry_filters</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_buildFilterList</span><span class="p">(</span><span class="n">entry</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">middle_filters</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_buildFilterList</span><span class="p">(</span><span class="n">middle</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">exit_filters</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_buildFilterList</span><span class="p">(</span><span class="nb">exit</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">is_IPv6_exit</span> <span class="o">=</span> <span class="s">&#39;exit_IPv6&#39;</span> <span class="ow">in</span> <span class="nb">exit</span> <span class="ow">and</span> <span class="nb">exit</span><span class="p">[</span><span class="s">&#39;exit_IPv6&#39;</span><span class="p">]</span> <span class="ow">is</span> <span class="bp">True</span>
+
+    <span class="k">def</span> <span class="nf">_buildFilterList</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">args</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        :param dict args: dict of &#39;keyword: value&#39; args to build relay</span>
+<span class="sd">            filters</span>
+<span class="sd">        :returns: **list, function** a list of filtering functions</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">filter_list</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">key</span> <span class="ow">in</span> <span class="n">args</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">key</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">PathConstraints</span><span class="o">.</span><span class="n">keywords</span><span class="p">:</span>
+                <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Unrecognized path constraint: &#39;{}&#39;.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">key</span><span class="p">)</span>
+                <span class="k">raise</span> <span class="n">UnknownPathConstraint</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+            <span class="n">build</span> <span class="o">=</span> <span class="n">PathConstraints</span><span class="o">.</span><span class="n">_build_table</span><span class="p">[</span><span class="n">key</span><span class="p">]</span><span class="o">.</span><span class="n">__get__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">))</span>
+            <span class="n">filter_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">build</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="n">key</span><span class="p">]))</span>
+        <span class="k">return</span> <span class="n">filter_list</span>
+
+<div class="viewcode-block" id="PathConstraints.satisfy"><a class="viewcode-back" href="../../docs/path/path.html#path.path.PathConstraints.satisfy">[docs]</a>    <span class="k">def</span> <span class="nf">satisfy</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">relays</span><span class="p">,</span> <span class="n">node</span><span class="p">,</span> <span class="n">family_fprints</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">subnets</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Return the subset of *relays* that satisfies the path constraints</span>
+<span class="sd">        for chosen *node*.</span>
+
+<span class="sd">        :param list relays:</span>
+<span class="sd">            a list (of stem.descriptor.server_descriptor.RelayDescriptor) of</span>
+<span class="sd">            relays to filter</span>
+<span class="sd">        :param str node: the node for which we&#39;re filtering (&#39;entry&#39;, &#39;middle&#39;,</span>
+<span class="sd">            or &#39;exit&#39;). determines which filters to use</span>
+<span class="sd">        :param set family_fprints: a set (of str) of fingerprints in use</span>
+<span class="sd">            by &quot;family members&quot; of relays on the current path. do not</span>
+<span class="sd">            choose any relays with a fingerprint in family_fprints</span>
+<span class="sd">        :param set subnets: set (of ipaddress.ip_network) of the current</span>
+<span class="sd">            /16&#39;s in use for the path in question. do not choose any relays</span>
+<span class="sd">            that share the same /16 as a relay that&#39;s already been chosen.</span>
+<span class="sd">        :returns: **list, stem.descriptor.server_descriptor.RelayDescriptor**</span>
+<span class="sd">            all RelayDescriptors from *relays* that satisfy the path</span>
+<span class="sd">            constraints for the chosen node position</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">filters</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="k">if</span> <span class="n">node</span> <span class="o">==</span> <span class="s">&#39;entry&#39;</span><span class="p">:</span>
+            <span class="n">filters</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">entry_filters</span>
+        <span class="k">elif</span> <span class="n">node</span> <span class="o">==</span> <span class="s">&#39;middle&#39;</span><span class="p">:</span>
+            <span class="n">filters</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">middle_filters</span>
+        <span class="k">elif</span> <span class="n">node</span> <span class="o">==</span> <span class="s">&#39;exit&#39;</span><span class="p">:</span>
+            <span class="n">filters</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">exit_filters</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Unrecognized node type: &#39;{}&#39;.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="n">UnknownPathConstraint</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+        <span class="n">f</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="nb">all</span><span class="p">([</span><span class="n">f</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">filters</span><span class="p">])</span>
+        <span class="n">node_list</span> <span class="o">=</span> <span class="nb">filter</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">relays</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">family_fprints</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">f</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">r</span><span class="p">:</span> <span class="n">r</span><span class="o">.</span><span class="n">fingerprint</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">family_fprints</span>
+            <span class="n">node_list</span> <span class="o">=</span> <span class="nb">filter</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">node_list</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">subnets</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">f</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">r</span><span class="p">:</span> <span class="n">ipaddress</span><span class="o">.</span><span class="n">ip_address</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">address</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">subnets</span>
+            <span class="n">node_list</span> <span class="o">=</span> <span class="nb">filter</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">node_list</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">node_list</span>
+</div>
+    <span class="nd">@dispatch</span><span class="p">(</span><span class="n">_build_table</span><span class="p">,</span> <span class="s">&#39;flags&#39;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">_buildFlagsFilter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">flags</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Build and return a &#39;flags&#39; filtering function.</span>
+
+<span class="sd">        The returned function takes a RelayDescriptor as an argument and</span>
+<span class="sd">        returns **True** if every flag in *flags* is contained in the</span>
+<span class="sd">        RelayDescriptors &#39;flags&#39; field, and **False** otherwise.</span>
+
+<span class="sd">        :param **list, str** flags: flags to check</span>
+<span class="sd">        :returns: **function**</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">for</span> <span class="n">flag</span> <span class="ow">in</span> <span class="n">flags</span><span class="p">[:]:</span>
+            <span class="k">if</span> <span class="n">flag</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">stem</span><span class="o">.</span><span class="n">Flag</span><span class="p">:</span>
+                <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Unrecognized flag: &#39;{}&#39;.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">flag</span><span class="p">)</span>
+                <span class="k">raise</span> <span class="n">UnknownPathConstraint</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+            <span class="c"># convert to unicode to work with RouterStatusEntry.flags arg</span>
+            <span class="n">flag</span> <span class="o">=</span> <span class="nb">unicode</span><span class="p">(</span><span class="n">flag</span><span class="p">)</span>
+        <span class="n">flags</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">flags</span><span class="p">)</span>
+        <span class="k">return</span> <span class="k">lambda</span> <span class="n">r</span><span class="p">:</span> <span class="n">flags</span><span class="o">.</span><span class="n">issubset</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">flags</span><span class="p">)</span>
+
+    <span class="nd">@dispatch</span><span class="p">(</span><span class="n">_build_table</span><span class="p">,</span> <span class="s">&#39;ntor&#39;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">_buildNTorFilter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Build and return an &#39;ntor&#39; filtering function.</span>
+
+<span class="sd">        The returned function takes a RelayDescriptor as an argument and</span>
+<span class="sd">        returns whether or not the relay&#39;s &#39;ntor_onion_key&#39; field&#39;s presence</span>
+<span class="sd">        matches the desired value.</span>
+
+<span class="sd">        That is, if *value* is True and the relay has an *ntor_onion_key*</span>
+<span class="sd">        field, then return **True**, etc.</span>
+
+<span class="sd">        :param bool value: desired truth value of statement (for some relay):</span>
+<span class="sd">            &#39;this relay&#39;s ntor onion key field is not None&#39;</span>
+<span class="sd">        :returns: **function**</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">return</span> <span class="k">lambda</span> <span class="n">r</span><span class="p">:</span> <span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">ntor_onion_key</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">)</span> <span class="o">==</span> <span class="n">value</span>
+
+    <span class="nd">@dispatch</span><span class="p">(</span><span class="n">_build_table</span><span class="p">,</span> <span class="s">&#39;exit_IPv6&#39;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">_buildExitIPv6Filter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Build and return an exit IPv6 filter.</span>
+<span class="sd">        :param bool value: desired truth value of statement</span>
+<span class="sd">        :returns: **function**</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">POLICY</span> <span class="o">=</span> <span class="n">DEFAULT_IPV6_EXIT_POLICY</span>
+        <span class="k">return</span> <span class="k">lambda</span> <span class="n">r</span><span class="p">:</span> <span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">exit_policy_v6</span> <span class="o">!=</span> <span class="n">POLICY</span><span class="p">)</span> <span class="o">==</span> <span class="n">value</span>
+
+    <span class="nd">@dispatch</span><span class="p">(</span><span class="n">_build_table</span><span class="p">,</span> <span class="s">&#39;exit_to_IP&#39;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">_buildExitToIPFilter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">IP</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Build and return an exit policy filter.</span>
+
+<span class="sd">        Build a function that takes a RelayDescriptor as an argument and </span>
+<span class="sd">        returns **True** if that relay&#39;s exit policy allows exits to IP.</span>
+
+<span class="sd">        :param str IP: desired IP to exit to</span>
+<span class="sd">        :returns: **function**</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">return</span> <span class="k">lambda</span> <span class="n">r</span><span class="p">:</span> <span class="n">r</span><span class="o">.</span><span class="n">exit_policy</span><span class="o">.</span><span class="n">can_exit_to</span><span class="p">(</span><span class="n">address</span><span class="o">=</span><span class="n">IP</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+
+    <span class="nd">@dispatch</span><span class="p">(</span><span class="n">_build_table</span><span class="p">,</span> <span class="s">&#39;exit_to_port&#39;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">_buildExitToPortFilter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">port</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Build and return a function that checks if a relay allows exits</span>
+<span class="sd">        to a certain port.</span>
+
+<span class="sd">        :param int port: port to check</span>
+<span class="sd">        :return: **function**</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">return</span> <span class="k">lambda</span> <span class="n">r</span><span class="p">:</span> <span class="n">r</span><span class="o">.</span><span class="n">exit_policy</span><span class="o">.</span><span class="n">can_exit_to</span><span class="p">(</span><span class="n">port</span><span class="o">=</span><span class="n">port</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+
+    <span class="nd">@dispatch</span><span class="p">(</span><span class="n">_build_table</span><span class="p">,</span> <span class="s">&#39;exit_to_IP_and_port&#39;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">_buildExitToIPAndPortFilter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">arg</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Build and return a function that takes an IP and port in form</span>
+<span class="sd">        &#39;127.0.0.1:443&#39; format and checks if an relay allows exits to both</span>
+<span class="sd">        the desired IP and port.</span>
+
+<span class="sd">        :param str arg: IP and port, delimited by &#39;:&#39;</span>
+<span class="sd">        :returns: **function**</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">arg</span> <span class="o">=</span> <span class="n">arg</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&#39;:&#39;</span><span class="p">)</span>
+        <span class="n">addr</span> <span class="o">=</span> <span class="n">arg</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">port</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">arg</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+        <span class="k">return</span> <span class="k">lambda</span> <span class="n">r</span><span class="p">:</span> <span class="n">r</span><span class="o">.</span><span class="n">exit_policy</span><span class="o">.</span><span class="n">can_exit_to</span><span class="p">(</span><span class="n">address</span><span class="o">=</span><span class="n">addr</span><span class="p">,</span> <span class="n">port</span><span class="o">=</span><span class="n">port</span><span class="p">)</span>
+
+    <span class="nd">@dispatch</span><span class="p">(</span><span class="n">_build_table</span><span class="p">,</span> <span class="s">&#39;fingerprint&#39;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">_buildFingerprintFilter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">fingerprint</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Build and return a function that takes a RelayDescriptor as an</span>
+<span class="sd">        argument and returns **True** if that relay&#39;s fingerprint matches</span>
+<span class="sd">        the value *fingerprint*.</span>
+
+<span class="sd">        :param str fingerprint: fingerprint to match</span>
+<span class="sd">        :returns: **function**</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">return</span> <span class="k">lambda</span> <span class="n">r</span><span class="p">:</span> <span class="n">r</span><span class="o">.</span><span class="n">fingerprint</span> <span class="o">==</span> <span class="n">fingerprint</span>
+
+</div>
+<div class="viewcode-block" id="PathSelector"><a class="viewcode-back" href="../../docs/path/path.html#path.path.PathSelector">[docs]</a><span class="k">class</span> <span class="nc">PathSelector</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;Select a path based on some path constraints.&#39;&#39;&#39;</span>
+
+    <span class="nd">@defer.inlineCallbacks</span>
+<div class="viewcode-block" id="PathSelector.getPath"><a class="viewcode-back" href="../../docs/path/path.html#path.path.PathSelector.getPath">[docs]</a>    <span class="k">def</span> <span class="nf">getPath</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">constraints</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        Filter the current set of RelayDescriptors and randomly choose an</span>
+<span class="sd">        entry, middle, and exit node that satisfy the desired path constraints.</span>
+
+<span class="sd">        We currently just use the absolutely bare minimum path constraints,</span>
+<span class="sd">        namely:</span>
+
+<span class="sd">            - no two relays in the same family</span>
+<span class="sd">            - no two relays in the same /16</span>
+<span class="sd">            - each relay has the required default flags</span>
+
+<span class="sd">        .. note: oppy currently only knows how to do an NTor handshake, so</span>
+<span class="sd">            we only choose RelayDescriptors that have an ntor_onion_key.</span>
+
+<span class="sd">        :param oppy.path.path.PathConstraints constraints: path constraints</span>
+<span class="sd">            to satisfy</span>
+<span class="sd">        :returns: **twisted.internet.defer.Deferred** that fires with an</span>
+<span class="sd">            oppy.path.Path</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="kn">from</span> <span class="nn">oppy.shared</span> <span class="kn">import</span> <span class="n">net_status</span>
+
+        <span class="c"># used to track the &quot;family&quot; fingerprints of relays in the current path</span>
+        <span class="n">family_fprints</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="c"># /16&#39;s of relays in the current path</span>
+        <span class="n">subnets</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="c"># wait until we have a good set of descriptors to choose from</span>
+        <span class="n">relays</span> <span class="o">=</span> <span class="k">yield</span> <span class="n">net_status</span><span class="o">.</span><span class="n">getDescriptors</span><span class="p">()</span>
+        <span class="n">relays</span> <span class="o">=</span> <span class="n">relays</span><span class="o">.</span><span class="n">values</span><span class="p">()</span>
+
+        <span class="n">entry_list</span> <span class="o">=</span> <span class="n">constraints</span><span class="o">.</span><span class="n">satisfy</span><span class="p">(</span><span class="n">relays</span><span class="p">,</span> <span class="n">node</span><span class="o">=</span><span class="s">&#39;entry&#39;</span><span class="p">)</span>
+        <span class="n">entry</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="n">entry_list</span><span class="p">)</span>
+
+        <span class="n">family_fprints</span> <span class="o">|=</span> <span class="nb">set</span><span class="p">([</span><span class="n">i</span><span class="o">.</span><span class="n">strip</span><span class="p">(</span><span class="s">u&#39;$&#39;</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">entry</span><span class="o">.</span><span class="n">family</span><span class="p">])</span>
+        <span class="n">subnets</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">ipaddress</span><span class="o">.</span><span class="n">ip_network</span><span class="p">(</span><span class="n">entry</span><span class="o">.</span><span class="n">address</span> <span class="o">+</span> <span class="s">u&#39;/16&#39;</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="bp">False</span><span class="p">))</span>
+        <span class="n">relays</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">entry</span><span class="p">)</span>
+
+        <span class="n">middle_list</span> <span class="o">=</span> <span class="n">constraints</span><span class="o">.</span><span class="n">satisfy</span><span class="p">(</span><span class="n">relays</span><span class="p">,</span> <span class="n">node</span><span class="o">=</span><span class="s">&#39;middle&#39;</span><span class="p">,</span>
+                                          <span class="n">family_fprints</span><span class="o">=</span><span class="n">family_fprints</span><span class="p">,</span>
+                                          <span class="n">subnets</span><span class="o">=</span><span class="n">subnets</span><span class="p">)</span>
+        <span class="n">middle</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="n">middle_list</span><span class="p">)</span>
+
+        <span class="n">family_fprints</span> <span class="o">|=</span> <span class="nb">set</span><span class="p">([</span><span class="n">i</span><span class="o">.</span><span class="n">strip</span><span class="p">(</span><span class="s">u&#39;$&#39;</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">entry</span><span class="o">.</span><span class="n">family</span><span class="p">])</span>
+        <span class="n">subnets</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">ipaddress</span><span class="o">.</span><span class="n">ip_network</span><span class="p">(</span><span class="n">entry</span><span class="o">.</span><span class="n">address</span> <span class="o">+</span> <span class="s">u&#39;/16&#39;</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="bp">False</span><span class="p">))</span>
+        <span class="n">relays</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">middle</span><span class="p">)</span>
+
+        <span class="n">exit_list</span> <span class="o">=</span> <span class="n">constraints</span><span class="o">.</span><span class="n">satisfy</span><span class="p">(</span><span class="n">relays</span><span class="p">,</span> <span class="n">node</span><span class="o">=</span><span class="s">&#39;exit&#39;</span><span class="p">,</span>
+                                        <span class="n">family_fprints</span><span class="o">=</span><span class="n">family_fprints</span><span class="p">,</span>
+                                        <span class="n">subnets</span><span class="o">=</span><span class="n">subnets</span><span class="p">)</span>
+        <span class="nb">exit</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="n">exit_list</span><span class="p">)</span>
+
+        <span class="n">defer</span><span class="o">.</span><span class="n">returnValue</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">entry</span><span class="p">,</span> <span class="n">middle</span><span class="p">,</span> <span class="nb">exit</span><span class="p">))</span></div></div>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

@@ -1,0 +1,222 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>socks &mdash; oppy 0.1 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <link rel="top" title="oppy 0.1 documentation" href="../../index.html" />
+    <link rel="up" title="socks" href="../socks.html" />
+    <link rel="next" title="stream" href="../stream.html" />
+    <link rel="prev" title="socks" href="../socks.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="../stream.html" title="stream"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="../socks.html" title="socks"
+             accesskey="P">previous</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../../docs.html" >Documentation</a> &raquo;</li>
+          <li><a href="../socks.html" accesskey="U">socks</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="module-socks.socks">
+<span id="socks"></span><h1>socks<a class="headerlink" href="#module-socks.socks" title="Permalink to this headline">¶</a></h1>
+<div class="topic">
+<p class="topic-title first">Details</p>
+<p>OppySOCKSProtocol instances handle the initial SOCKS 5 handshake with
+client applications, passing the remote resource request to a stream,
+and then forwarding data back and forth between a circuit and a local
+application.</p>
+<p>An OppySOCKSProtocol instance is assigned to each incoming request on
+the SOCKS port, and upon successful handshake negotiaton a stream is
+created for the client application&#8217;s request.</p>
+<p>Once the client has made a successful request, this object goes into the
+forwarding state in which it:</p>
+<blockquote>
+<div><ul class="simple">
+<li>forwards all subsequent data from the client to the remote resource
+(through a circuit)</li>
+<li>sends all data written to this object&#8217;s writeData() method to the
+client application</li>
+</ul>
+</div></blockquote>
+<p>Throughout this process, this object communicates with the client
+application via transport, as usual for Twisted Protocol objects.</p>
+</div>
+<dl class="class">
+<dt id="socks.socks.OppySOCKSProtocol">
+<em class="property">class </em><tt class="descclassname">socks.socks.</tt><tt class="descname">OppySOCKSProtocol</tt><a class="reference internal" href="../../_modules/socks/socks.html#OppySOCKSProtocol"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#socks.socks.OppySOCKSProtocol" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <tt class="xref py py-class docutils literal"><span class="pre">twisted.internet.protocol.Protocol</span></tt></p>
+<p>Do SOCKS 5 handshake and forward local traffic to streams.</p>
+<dl class="method">
+<dt id="socks.socks.OppySOCKSProtocol.dataReceived">
+<tt class="descname">dataReceived</tt><big>(</big><em>data</em><big>)</big><a class="reference internal" href="../../_modules/socks/socks.html#OppySOCKSProtocol.dataReceived"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#socks.socks.OppySOCKSProtocol.dataReceived" title="Permalink to this definition">¶</a></dt>
+<dd><p>Either handle an incoming SOCKS handshake, make a new stream
+request, or forward application data on to a stream.</p>
+<p>Called when data is received from a local application.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>data</strong> (<em>str</em>) &#8211; data that was received</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="socks.socks.OppySOCKSProtocol.writeData">
+<tt class="descname">writeData</tt><big>(</big><em>data</em><big>)</big><a class="reference internal" href="../../_modules/socks/socks.html#OppySOCKSProtocol.writeData"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#socks.socks.OppySOCKSProtocol.writeData" title="Permalink to this definition">¶</a></dt>
+<dd><p>Write received <em>data</em> to local client application.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>data</strong> (<em>str</em>) &#8211; data to write</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="socks.socks.OppySOCKSProtocol.closeFromStream">
+<tt class="descname">closeFromStream</tt><big>(</big><big>)</big><a class="reference internal" href="../../_modules/socks/socks.html#OppySOCKSProtocol.closeFromStream"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#socks.socks.OppySOCKSProtocol.closeFromStream" title="Permalink to this definition">¶</a></dt>
+<dd><p>Lose this transports local connection.</p>
+<p>Called by the attached stream when we want to signal to a local
+application that this connection has closed.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="socks.socks.OppySOCKSProtocol.connectionLost">
+<tt class="descname">connectionLost</tt><big>(</big><em>reason</em><big>)</big><a class="reference internal" href="../../_modules/socks/socks.html#OppySOCKSProtocol.connectionLost"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#socks.socks.OppySOCKSProtocol.connectionLost" title="Permalink to this definition">¶</a></dt>
+<dd><p>If we have been assigned a good stream, just log that we&#8217;ve
+lost the connection.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>reason</strong> (<em>reason</em>) &#8211; reason this connection was lost</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="socks.socks.OppySOCKSProtocol.connectionMade">
+<tt class="descname">connectionMade</tt><big>(</big><big>)</big><a class="reference internal" href="../../_modules/socks/socks.html#OppySOCKSProtocol.connectionMade"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#socks.socks.OppySOCKSProtocol.connectionMade" title="Permalink to this definition">¶</a></dt>
+<dd><p>Log that SOCKS has made a local connection and wait for an
+incoming handshake request.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="socks.socks.OppySOCKSProtocolFactory">
+<em class="property">class </em><tt class="descclassname">socks.socks.</tt><tt class="descname">OppySOCKSProtocolFactory</tt><a class="reference internal" href="../../_modules/socks/socks.html#OppySOCKSProtocolFactory"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#socks.socks.OppySOCKSProtocolFactory" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <tt class="xref py py-class docutils literal"><span class="pre">twisted.internet.protocol.ServerFactory</span></tt></p>
+<p>Serve <em>OppySOCKSProtocol</em> instances.</p>
+<dl class="attribute">
+<dt id="socks.socks.OppySOCKSProtocolFactory.protocol">
+<tt class="descname">protocol</tt><a class="headerlink" href="#socks.socks.OppySOCKSProtocolFactory.protocol" title="Permalink to this definition">¶</a></dt>
+<dd><p>alias of <a class="reference internal" href="#socks.socks.OppySOCKSProtocol" title="socks.socks.OppySOCKSProtocol"><tt class="xref py py-class docutils literal"><span class="pre">OppySOCKSProtocol</span></tt></a></p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="../socks.html"
+                        title="previous chapter">socks</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="../stream.html"
+                        title="next chapter">stream</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="../../_sources/docs/socks/socks.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="../stream.html" title="stream"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="../socks.html" title="socks"
+             >previous</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../../docs.html" >Documentation</a> &raquo;</li>
+          <li><a href="../socks.html" >socks</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

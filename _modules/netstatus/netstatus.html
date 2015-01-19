@@ -1,0 +1,417 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>netstatus.netstatus &mdash; oppy 0.1 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <link rel="top" title="oppy 0.1 documentation" href="../../index.html" />
+    <link rel="up" title="Module code" href="../index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for netstatus.netstatus</h1><div class="highlight"><pre>
+<span class="c"># Copyright 2014, 2015, Nik Kinkel</span>
+<span class="c"># See LICENSE for licensing information</span>
+
+<span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">.. topic:: Details</span>
+
+<span class="sd">    NetStatus handles downloading network status documents and serving requests</span>
+<span class="sd">    for server descriptors (needed for building paths and circuits). When</span>
+<span class="sd">    instantiated, NetStatus immediately tries to download the most</span>
+<span class="sd">    recent copies of the network consensus and the set of current server</span>
+<span class="sd">    descriptors. NetStatus also takes care of automatically updating local</span>
+<span class="sd">    copies of network status documents.</span>
+
+<span class="sd">    NetStatus:</span>
+
+<span class="sd">        - Uses V2Dir directory caches when possible, only falling back to</span>
+<span class="sd">          directory authorities if we don&#39;t know about any caches.</span>
+<span class="sd">        - Tries to use a cached copy of the consensus from the filesystem</span>
+<span class="sd">          to initially figure out the V2Dir caches.</span>
+<span class="sd">        - Writes a copy of the consensus to the filesystem for later use.</span>
+<span class="sd">        - Uses stem to represent the consensus, consensus entries, and</span>
+<span class="sd">          server descriptors.</span>
+<span class="sd">        - Does the actual document parsing in separate worker threads.</span>
+<span class="sd">        - Schedules the next document download</span>
+<span class="sd">        - Handles incoming requests for server descriptors by returning</span>
+<span class="sd">          a deferred that fires when NetStatus has a good set of server</span>
+<span class="sd">          descriptors</span>
+
+<span class="sd">&#39;&#39;&#39;</span>
+<span class="kn">import</span> <span class="nn">io</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">random</span>
+<span class="kn">import</span> <span class="nn">zlib</span>
+
+<span class="kn">from</span> <span class="nn">twisted.internet</span> <span class="kn">import</span> <span class="n">defer</span><span class="p">,</span> <span class="n">threads</span>
+<span class="kn">from</span> <span class="nn">twisted.web.client</span> <span class="kn">import</span> <span class="n">getPage</span>
+
+<span class="kn">from</span> <span class="nn">stem</span> <span class="kn">import</span> <span class="n">Flag</span>
+<span class="kn">from</span> <span class="nn">stem.descriptor</span> <span class="kn">import</span> <span class="n">parse_file</span>
+<span class="kn">from</span> <span class="nn">stem.descriptor</span> <span class="kn">import</span> <span class="n">DocumentHandler</span>
+<span class="kn">from</span> <span class="nn">stem.descriptor.networkstatus</span> <span class="kn">import</span> <span class="n">NetworkStatusDocumentV3</span>
+<span class="kn">from</span> <span class="nn">stem.descriptor.remote</span> <span class="kn">import</span> <span class="n">get_authorities</span>
+
+<span class="kn">from</span> <span class="nn">oppy.netstatus</span> <span class="kn">import</span> <span class="n">definitions</span> <span class="k">as</span> <span class="n">DEF</span>
+
+
+<span class="c"># how long we&#39;ll wait before downloading fresh network status documents</span>
+<span class="c"># NOTE: this is wrong according to tor-spec. We should actually be checking</span>
+<span class="c">#       the times on the consensus and choosing a random time within some</span>
+<span class="c">#       window.</span>
+<span class="n">DEFAULT_DOWNLOAD_INTERVAL</span> <span class="o">=</span> <span class="mi">3600</span>
+
+
+<div class="viewcode-block" id="NetStatus"><a class="viewcode-back" href="../../docs/netstatus/netstatus.html#netstatus.netstatus.NetStatus">[docs]</a><span class="k">class</span> <span class="nc">NetStatus</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;Download consensus and server descriptor documents.&#39;&#39;&#39;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Immediately start downloading network status documents.</span>
+
+<span class="sd">        Upon instantiation, NetStatus will immediately begin trying to</span>
+<span class="sd">        download new network status documents. Incoming requests for</span>
+<span class="sd">        descriptors (usually caused by requests to get a Path) will be</span>
+<span class="sd">        added to a callback chain and called back when we have a good set of</span>
+<span class="sd">        router descriptors.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&quot;Starting NetStatus.&quot;</span><span class="p">)</span>
+        <span class="c"># self._initial tracks whether we&#39;re on the &quot;initial&quot; download of the</span>
+        <span class="c"># network docs. if so, the path request callback is fired when we</span>
+        <span class="c"># have descriptors available.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_initial</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="c"># chain of requests for descriptors that will get called back when we</span>
+        <span class="c"># get the first set of network docs. after that, this is no longer used</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_descriptor_request_stack</span> <span class="o">=</span> <span class="n">defer</span><span class="o">.</span><span class="n">Deferred</span><span class="p">()</span>
+        <span class="c"># endpoints is a list of V2Dir directory caches we can choose from to</span>
+        <span class="c"># try getting network docs. upon instantiation, we check if there is</span>
+        <span class="c"># a &quot;cached-consensus&quot; file to pull them from, otherwise endpoints is</span>
+        <span class="c"># initialized to the set of directory authorities</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_endpoints</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_getInitialEndpoints</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_consensus</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_descriptors</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_getDocuments</span><span class="p">()</span>
+
+<div class="viewcode-block" id="NetStatus.getDescriptors"><a class="viewcode-back" href="../../docs/netstatus/netstatus.html#netstatus.netstatus.NetStatus.getDescriptors">[docs]</a>    <span class="k">def</span> <span class="nf">getDescriptors</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Return a deferred which will callback with a dict mapping</span>
+<span class="sd">        fingerprint-&gt;RelayDescriptor when we get a set of good descriptors.</span>
+
+<span class="sd">        Called back immediately if we already have server descriptors.</span>
+
+<span class="sd">        :returns: **twisted.internet.defer.Deferred** that fires with a dict</span>
+<span class="sd">            that maps fingerprints-&gt;RelayDescriptors</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">d</span> <span class="o">=</span> <span class="n">defer</span><span class="o">.</span><span class="n">Deferred</span><span class="p">()</span>
+        <span class="c"># if we have descriptors, immediately callback</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_descriptors</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">d</span><span class="o">.</span><span class="n">callback</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_descriptors</span><span class="p">)</span>
+        <span class="c"># if we don&#39;t have descriptors yet, add this request to the</span>
+        <span class="c"># descriptor request chain and callback when we get docs downloaded</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">def</span> <span class="nf">serveDescriptor</span><span class="p">(</span><span class="n">result</span><span class="p">):</span>
+                <span class="n">d</span><span class="o">.</span><span class="n">callback</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+                <span class="k">return</span> <span class="n">result</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_descriptor_request_stack</span><span class="o">.</span><span class="n">addCallback</span><span class="p">(</span><span class="n">serveDescriptor</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">d</span>
+</div>
+    <span class="nd">@defer.inlineCallbacks</span>
+    <span class="k">def</span> <span class="nf">_getDocuments</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Download and parse network status documents.</span>
+
+<span class="sd">        Asynchronously download and parse a fresh consensus and set of server</span>
+<span class="sd">        descriptors. The parsing is done using stem in a separate thread.</span>
+
+<span class="sd">        If this is the first time we&#39;ve attempted to download documents,</span>
+<span class="sd">        callback the descriptor request chain to start satisfying pending</span>
+<span class="sd">        requests for server descriptors as soon as we have a good set of</span>
+<span class="sd">        descriptors.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&quot;Starting document downloader.&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_consensus</span> <span class="o">=</span> <span class="k">yield</span> <span class="bp">self</span><span class="o">.</span><span class="n">_downloadConsensus</span><span class="p">()</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;Got fresh consensus.&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_descriptors</span> <span class="o">=</span> <span class="k">yield</span> <span class="bp">self</span><span class="o">.</span><span class="n">_downloadDescriptors</span><span class="p">()</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;Got fresh server descriptors.&quot;</span><span class="p">)</span>
+        <span class="c"># if this is the first set of documents we&#39;ve downloaded, start the</span>
+        <span class="c"># descriptor_request_stack callback chain to satisfy requests for</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_initial</span> <span class="ow">is</span> <span class="bp">True</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_descriptor_request_stack</span><span class="o">.</span><span class="n">callback</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_descriptors</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_initial</span> <span class="o">=</span> <span class="bp">False</span>
+        <span class="c"># schedule the next download time</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_scheduleDownload</span><span class="p">()</span>
+
+    <span class="nd">@defer.inlineCallbacks</span>
+    <span class="k">def</span> <span class="nf">_downloadConsensus</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Download, parse, and cache the current consensus.</span>
+
+<span class="sd">        Try random V2Dir directory caches if we know about any already,</span>
+<span class="sd">        falling back to directory authorities if have to. Actual consensus</span>
+<span class="sd">        parsing is done in a separate thread.</span>
+
+<span class="sd">        .. note: If this download fails for any reason (timeout, 503, zlib</span>
+<span class="sd">            error, etc.), it will be immediately retried with another random</span>
+<span class="sd">            V2Dir choice.</span>
+
+<span class="sd">        :returns: **twisted.internet.defer.Deferred** that fires with a</span>
+<span class="sd">            NetworkStatusDocumentV3.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&quot;Starting consensus download.&quot;</span><span class="p">)</span>
+            <span class="n">d</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_endpoints</span><span class="p">)</span>
+            <span class="n">addr</span> <span class="o">=</span> <span class="s">&quot;http://&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">address</span><span class="p">)</span> <span class="o">+</span> <span class="s">&quot;:&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">dir_port</span><span class="p">)</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&quot;Starting consensus download from {}&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">addr</span><span class="p">))</span>
+            <span class="n">raw</span> <span class="o">=</span> <span class="k">yield</span> <span class="n">getPage</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">addr</span> <span class="o">+</span> <span class="n">DEF</span><span class="o">.</span><span class="n">CONSENSUS_URL</span><span class="p">))</span>
+            <span class="n">consensus</span> <span class="o">=</span> <span class="k">yield</span> <span class="n">threads</span><span class="o">.</span><span class="n">deferToThread</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_processConsensus</span><span class="p">,</span>
+                                                    <span class="n">raw</span><span class="p">)</span>
+            <span class="n">defer</span><span class="o">.</span><span class="n">returnValue</span><span class="p">(</span><span class="n">consensus</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&quot;Error downloading consensus: {}.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">e</span><span class="p">))</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&quot;Retrying consensus download.&quot;</span><span class="p">)</span>
+            <span class="c"># immediately retry the download on error</span>
+            <span class="n">ret</span> <span class="o">=</span> <span class="k">yield</span> <span class="bp">self</span><span class="o">.</span><span class="n">_downloadConsensus</span><span class="p">()</span>
+            <span class="n">defer</span><span class="o">.</span><span class="n">returnValue</span><span class="p">(</span><span class="n">ret</span><span class="p">)</span>
+
+    <span class="nd">@defer.inlineCallbacks</span>
+    <span class="k">def</span> <span class="nf">_downloadDescriptors</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Download and parse the full set of server descriptors.</span>
+
+<span class="sd">        Choose a random V2Dir cache to attempt a download from. Parse using</span>
+<span class="sd">        stem in a separate thread.</span>
+
+<span class="sd">        .. note:: We currently just download *all* server descriptors at</span>
+<span class="sd">            once. This is probably not the best way to get descriptors,</span>
+<span class="sd">            and these requests should be split up over multiple V2Dir</span>
+<span class="sd">            caches.</span>
+
+<span class="sd">        :returns: **twisted.internet.defer.Deferred** that fires with a dict</span>
+<span class="sd">            mapping fingerprints-&gt;RelayDescriptors.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">d</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_endpoints</span><span class="p">)</span>
+            <span class="n">addr</span> <span class="o">=</span> <span class="s">&quot;http://&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">address</span><span class="p">)</span> <span class="o">+</span> <span class="s">&quot;:&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">dir_port</span><span class="p">)</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&quot;Downloading descriptors from {}&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">addr</span><span class="p">))</span>
+            <span class="n">raw</span> <span class="o">=</span> <span class="k">yield</span> <span class="n">getPage</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">addr</span> <span class="o">+</span> <span class="n">DEF</span><span class="o">.</span><span class="n">DESCRIPTORS_URL</span><span class="p">))</span>
+            <span class="n">descriptors</span> <span class="o">=</span> <span class="k">yield</span> <span class="n">threads</span><span class="o">.</span><span class="n">deferToThread</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_processDescriptors</span><span class="p">,</span>
+                                                      <span class="n">raw</span><span class="p">)</span>
+            <span class="n">defer</span><span class="o">.</span><span class="n">returnValue</span><span class="p">(</span><span class="n">descriptors</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&quot;Error downloading descriptors: {}.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">e</span><span class="p">))</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&quot;Retrying descriptors download.&quot;</span><span class="p">)</span>
+            <span class="c"># immediately retry on failure</span>
+            <span class="n">ret</span> <span class="o">=</span> <span class="k">yield</span> <span class="bp">self</span><span class="o">.</span><span class="n">_downloadDescriptors</span><span class="p">()</span>
+            <span class="n">defer</span><span class="o">.</span><span class="n">returnValue</span><span class="p">(</span><span class="n">ret</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_processConsensus</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">raw</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Decompress consensus, parse, write to &quot;cached-consensus&quot; and</span>
+<span class="sd">        choose a new set of endpoints to use for the next download.</span>
+
+<span class="sd">        .. note: This is run in a separate worker thread using</span>
+<span class="sd">            twisted.internet.threads.deferToThread() because consensus</span>
+<span class="sd">            parsing can take a while.</span>
+
+<span class="sd">        :param str raw: compressed consensus bytes</span>
+<span class="sd">        :returns: stem.descriptors.networkstatus.NetworkStatusDocumentV3</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">raw</span> <span class="o">=</span> <span class="n">zlib</span><span class="o">.</span><span class="n">decompress</span><span class="p">(</span><span class="n">raw</span><span class="p">)</span>
+        <span class="n">consensus</span> <span class="o">=</span> <span class="n">NetworkStatusDocumentV3</span><span class="p">(</span><span class="n">raw</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_cacheConsensus</span><span class="p">(</span><span class="n">consensus</span><span class="p">)</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&quot;Wrote cached-consensus.&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_endpoints</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_extractV2DirEndpoints</span><span class="p">(</span><span class="n">consensus</span><span class="p">)</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&quot;Found {} V2Dir endpoints.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_endpoints</span><span class="p">)))</span>
+        <span class="k">return</span> <span class="n">consensus</span>
+
+    <span class="k">def</span> <span class="nf">_processDescriptors</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">raw</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Decompress and parse descriptors, then build a dict mapping</span>
+<span class="sd">        fingerprint -&gt; RelayDescriptor for all relays found in both the</span>
+<span class="sd">        network consensus and the server descriptor set.</span>
+
+<span class="sd">        We throw away and relays that are not found in the network consensus.</span>
+
+<span class="sd">        We also add a new attribute &#39;flags&#39; to each RelayDescriptor. &#39;flags&#39;</span>
+<span class="sd">        is an attribue of RouterStatusEntry&#39;s found in the consensus, and</span>
+<span class="sd">        adding them here simplifies path selection. &#39;flags&#39; is a set of</span>
+<span class="sd">        unicode strings.</span>
+
+<span class="sd">        .. note: This runs in a separate work thread using</span>
+<span class="sd">            twisted.internet.threads.deferToThread() because parsing tends to</span>
+<span class="sd">            take a while.</span>
+
+<span class="sd">        :param str raw: compressed server descriptor bytes</span>
+<span class="sd">        :returns: **dict** mapping fingerprint -&gt; RelayDescriptor for every</span>
+<span class="sd">            relay found in both the current network consensus and the set</span>
+<span class="sd">            of server descriptors.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">raw</span> <span class="o">=</span> <span class="n">zlib</span><span class="o">.</span><span class="n">decompress</span><span class="p">(</span><span class="n">raw</span><span class="p">)</span>
+        <span class="n">gen</span> <span class="o">=</span> <span class="n">parse_file</span><span class="p">(</span>
+            <span class="n">io</span><span class="o">.</span><span class="n">BytesIO</span><span class="p">(</span><span class="n">raw</span><span class="p">),</span>
+            <span class="n">DEF</span><span class="o">.</span><span class="n">STEM_DESCRIPTORS_TYPE</span><span class="p">,</span>
+            <span class="n">validate</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span>
+            <span class="n">document_handler</span><span class="o">=</span><span class="n">DocumentHandler</span><span class="o">.</span><span class="n">DOCUMENT</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">descriptors</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="c"># only use descriptors that are also found in the consensus, and</span>
+        <span class="c"># also add the &#39;flags&#39; attribute, a set of unicode strings describing</span>
+        <span class="c"># the flags a given RelayDescriptor has</span>
+        <span class="k">for</span> <span class="n">relay</span> <span class="ow">in</span> <span class="n">gen</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">flags</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_consensus</span><span class="o">.</span><span class="n">routers</span><span class="p">[</span><span class="n">relay</span><span class="o">.</span><span class="n">fingerprint</span><span class="p">]</span><span class="o">.</span><span class="n">flags</span><span class="p">)</span>
+                <span class="n">relay</span><span class="o">.</span><span class="n">flags</span> <span class="o">=</span> <span class="n">flags</span>
+                <span class="n">descriptors</span><span class="p">[</span><span class="n">relay</span><span class="o">.</span><span class="n">fingerprint</span><span class="p">]</span> <span class="o">=</span> <span class="n">relay</span>
+            <span class="c"># skip any relays not found in the consensus</span>
+            <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+                <span class="k">pass</span>
+
+        <span class="k">return</span> <span class="n">descriptors</span>
+
+    <span class="k">def</span> <span class="nf">_cacheConsensus</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">consensus</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Dump a copy of the consensus to the &quot;cached-consensus&quot; file.</span>
+
+<span class="sd">        :param stem.descriptor.networkstatus.NetworkStatusDocumentV3 consensus:</span>
+<span class="sd">            fresh consensus to cache on filesystem</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">DEF</span><span class="o">.</span><span class="n">CONSENSUS_CACHE_FILE</span><span class="p">,</span> <span class="s">&#39;w&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+                <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">consensus</span><span class="p">))</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&quot;Failed to write &#39;cached-consensus&#39;: {}.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">e</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">_extractV2DirEndpoints</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">consensus</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Find a new set of V2Dir directory caches to use from the current</span>
+<span class="sd">        consensus.</span>
+
+<span class="sd">        :param stem.descriptors.networkstatus.NetworkStatusDocumentV3 consensus:</span>
+<span class="sd">            fresh consensus to grab V2Dir caches from</span>
+<span class="sd">        :return: **list, stem.descriptor.router_status_entry.RouterStatusEntry**</span>
+<span class="sd">            RouterStatusEntry&#39;s that have the &#39;V2Dir&#39; flag</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">endpoints</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">relay</span> <span class="ow">in</span> <span class="n">consensus</span><span class="o">.</span><span class="n">routers</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">Flag</span><span class="o">.</span><span class="n">V2DIR</span> <span class="ow">in</span> <span class="n">relay</span><span class="o">.</span><span class="n">flags</span><span class="p">:</span>
+                <span class="n">endpoints</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">relay</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="n">endpoints</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_getInitialEndpoints</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Get an initial set of servers to download the network status</span>
+<span class="sd">        documents from.</span>
+
+<span class="sd">        First try reading from the &quot;cached-consensus&quot; file. If this isn&#39;t</span>
+<span class="sd">        successful for any reason fallback to using the directory</span>
+<span class="sd">        authorities.</span>
+
+<span class="sd">        This is only called on instantiation, and any future downloads will</span>
+<span class="sd">        already have a fresh set of V2Dir endpoints.</span>
+
+<span class="sd">        .. note: We just use the directory authorities defined in stem.</span>
+
+<span class="sd">        :returns: **list** containing either RouterStatusEntry objects with</span>
+<span class="sd">            the &#39;V2Dir&#39; flag or DirectoryAuthorities</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">endpoints</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">DEF</span><span class="o">.</span><span class="n">CONSENSUS_CACHE_FILE</span><span class="p">,</span> <span class="s">&#39;rb&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+                <span class="n">data</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+            <span class="n">old_consensus</span> <span class="o">=</span> <span class="n">NetworkStatusDocumentV3</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+            <span class="n">endpoints</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_extractV2DirEndpoints</span><span class="p">(</span><span class="n">old_consensus</span><span class="p">)</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Found {} V2Dir endpoints in cached-consensus.&quot;</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">endpoints</span><span class="p">)))</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">IOError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">)</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&quot;Error reading from cached-consensus: {}&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">e</span><span class="p">))</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&quot;Falling back to directory authorities.&quot;</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="n">endpoints</span><span class="p">)</span> <span class="k">if</span> <span class="n">endpoints</span> <span class="k">else</span> <span class="n">get_authorities</span><span class="p">()</span><span class="o">.</span><span class="n">values</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">_scheduleDownload</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Schedule the next network status document download.</span>
+
+<span class="sd">        .. note: This is incorrect. We should actually be calculating the</span>
+<span class="sd">            correct time according to the parameters defined in Tor&#39;s</span>
+<span class="sd">            **dir-spec**, but for now we just schedule a download an hour in</span>
+<span class="sd">            the future of the previous download.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="kn">from</span> <span class="nn">twisted.internet</span> <span class="kn">import</span> <span class="n">reactor</span>
+        <span class="c"># XXX this is a bug, we should be choosing according to parameters</span>
+        <span class="c">#     in the tor `dir-spec`</span>
+        <span class="n">seconds</span> <span class="o">=</span> <span class="n">DEFAULT_DOWNLOAD_INTERVAL</span>
+        <span class="n">reactor</span><span class="o">.</span><span class="n">callLater</span><span class="p">(</span><span class="n">seconds</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_getDocuments</span><span class="p">)</span>
+        <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Scheduled next consensus download in {} seconds.&quot;</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">seconds</span><span class="p">))</span></div>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

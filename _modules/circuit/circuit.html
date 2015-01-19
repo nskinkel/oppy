@@ -1,0 +1,914 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>circuit.circuit &mdash; oppy 0.1 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <link rel="top" title="oppy 0.1 documentation" href="../../index.html" />
+    <link rel="up" title="Module code" href="../index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for circuit.circuit</h1><div class="highlight"><pre>
+<span class="c"># Copyright 2014, 2015, Nik Kinkel</span>
+<span class="c"># See LICENSE for licensing information</span>
+
+<span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">.. topic:: Details</span>
+
+<span class="sd">    Circuits are channels through the Tor network through which data is</span>
+<span class="sd">    written and received.</span>
+
+<span class="sd">    Circuits have a few jobs:</span>
+
+<span class="sd">        - Get a valid path of relays through the Tor network (circuits</span>
+<span class="sd">          received some path_constraints, but it&#39;s up to each circuit</span>
+<span class="sd">          to build it&#39;s own path)</span>
+<span class="sd">        - Build the path by extending the circuit one hop at a time</span>
+<span class="sd">        - Derive shared key material for each node on the path</span>
+<span class="sd">        - Encrypt outgoing cells and decrypt incoming cells</span>
+<span class="sd">        - Process incoming control cells to manage circuit state</span>
+<span class="sd">        - Initiate new stream connections</span>
+<span class="sd">        - Process incoming data cells and pass data to associated streams</span>
+<span class="sd">        - Do some flow-control management</span>
+<span class="sd">        - Handle different ways of circuit tear-down depending on the</span>
+<span class="sd">          current state and why a circuit is being torn down</span>
+
+<span class="sd">&#39;&#39;&#39;</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+
+<span class="kn">from</span> <span class="nn">twisted.internet</span> <span class="kn">import</span> <span class="n">defer</span>
+
+<span class="kn">import</span> <span class="nn">oppy.crypto.util</span> <span class="kn">as</span> <span class="nn">crypto</span>
+
+<span class="kn">from</span> <span class="nn">oppy.cell.definitions</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">MAX_RPAYLOAD_LEN</span><span class="p">,</span>
+    <span class="n">BACKWARD_CELLS</span><span class="p">,</span>
+    <span class="n">DESTROY_CMD</span><span class="p">,</span>
+    <span class="n">RELAY_DATA_CMD</span><span class="p">,</span>
+    <span class="n">RELAY_END_CMD</span><span class="p">,</span>
+    <span class="n">RELAY_CONNECTED_CMD</span><span class="p">,</span>
+    <span class="n">RELAY_SENDME_CMD</span><span class="p">,</span>
+    <span class="n">RELAY_TRUNCATED_CMD</span><span class="p">,</span>
+    <span class="n">RELAY_DROP_CMD</span><span class="p">,</span>
+    <span class="n">RELAY_RESOLVED_CMD</span><span class="p">,</span>
+    <span class="n">REASON_DONE</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="kn">from</span> <span class="nn">oppy.circuit.handshake.exceptions</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">BadHandshakeState</span><span class="p">,</span>
+    <span class="n">HandshakeFailed</span><span class="p">,</span>
+    <span class="n">ReceivedDestroyCell</span><span class="p">,</span>
+    <span class="n">UnexpectedCell</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="kn">from</span> <span class="nn">oppy.cell.fixedlen</span> <span class="kn">import</span> <span class="n">DestroyCell</span>
+<span class="kn">from</span> <span class="nn">oppy.cell.relay</span> <span class="kn">import</span> <span class="n">RelayBeginCell</span>
+<span class="kn">from</span> <span class="nn">oppy.cell.relay</span> <span class="kn">import</span> <span class="n">RelayDataCell</span>
+<span class="kn">from</span> <span class="nn">oppy.cell.relay</span> <span class="kn">import</span> <span class="n">RelayEndCell</span>
+<span class="kn">from</span> <span class="nn">oppy.cell.relay</span> <span class="kn">import</span> <span class="n">RelaySendMeCell</span>
+
+<span class="kn">from</span> <span class="nn">oppy.circuit.handshake.ntorfsm</span> <span class="kn">import</span> <span class="n">NTorFSM</span>
+<span class="kn">from</span> <span class="nn">oppy.crypto.exceptions</span> <span class="kn">import</span> <span class="n">KeyDerivationFailed</span><span class="p">,</span> <span class="n">UnrecognizedCell</span>
+<span class="kn">from</span> <span class="nn">oppy.path.path</span> <span class="kn">import</span> <span class="n">PathSelector</span>
+<span class="kn">from</span> <span class="nn">oppy.util.tools</span> <span class="kn">import</span> <span class="n">dispatch</span><span class="p">,</span> <span class="n">enum</span>
+
+
+<span class="n">CIRCUIT_WINDOW_THRESHOLD_INIT</span> <span class="o">=</span> <span class="mi">1000</span>
+<span class="n">SENDME_THRESHOLD</span> <span class="o">=</span> <span class="mi">900</span>
+<span class="n">WINDOW_SIZE</span> <span class="o">=</span> <span class="mi">100</span>
+
+
+<span class="n">CState</span> <span class="o">=</span> <span class="n">enum</span><span class="p">(</span>
+    <span class="n">PENDING</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+    <span class="n">OPEN</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+    <span class="n">BUFFERING</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+<span class="p">)</span>
+
+
+<span class="n">CType</span> <span class="o">=</span> <span class="n">enum</span><span class="p">(</span>
+    <span class="n">IPv4</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+    <span class="n">IPv6</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+<span class="p">)</span>
+
+
+<div class="viewcode-block" id="Circuit"><a class="viewcode-back" href="../../docs/circuit/circuit.html#circuit.circuit.Circuit">[docs]</a><span class="k">class</span> <span class="nc">Circuit</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+
+    <span class="c"># dispatch table used to lookup handler functions for incoming cells</span>
+    <span class="c"># filled in with the `dispatch` decorator</span>
+    <span class="n">_response_table</span> <span class="o">=</span> <span class="p">{}</span>
+    
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cid</span><span class="p">,</span> <span class="n">path_constraints</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        :param int cid: id of this circuit</span>
+<span class="sd">        :param oppy.path.path.PathConstraints path_constraints: the constraints</span>
+<span class="sd">            that this circuit&#39;s path should satisfy</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">circuit_id</span> <span class="o">=</span> <span class="n">cid</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">path_constraints</span> <span class="o">=</span> <span class="n">path_constraints</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">connection</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_selector</span> <span class="o">=</span> <span class="n">PathSelector</span><span class="p">()</span>
+        <span class="c"># _read_queue handles incoming cells from the network</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_read_queue</span> <span class="o">=</span> <span class="n">defer</span><span class="o">.</span><span class="n">DeferredQueue</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_read_deferred</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="c"># _write_queue handles incoming data from local applications</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_write_queue</span> <span class="o">=</span> <span class="n">defer</span><span class="o">.</span><span class="n">DeferredQueue</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_write_deferred</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_stream_map</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_stream_ctr</span> <span class="o">=</span> <span class="mi">1</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_crypt_path</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="o">=</span> <span class="n">CState</span><span class="o">.</span><span class="n">PENDING</span>
+        <span class="c"># deliver window is incoming data cells</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_deliver_window</span> <span class="o">=</span> <span class="n">CIRCUIT_WINDOW_THRESHOLD_INIT</span>
+        <span class="c"># package window is outgoing data cells</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_package_window</span>  <span class="o">=</span> <span class="n">CIRCUIT_WINDOW_THRESHOLD_INIT</span>
+
+        <span class="k">if</span> <span class="n">path_constraints</span><span class="o">.</span><span class="n">is_IPv6_exit</span> <span class="ow">is</span> <span class="bp">True</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">ctype</span> <span class="o">=</span> <span class="n">CType</span><span class="o">.</span><span class="n">IPv6</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">ctype</span> <span class="o">=</span> <span class="n">CType</span><span class="o">.</span><span class="n">IPv4</span>
+
+        <span class="c"># get a path and a connection</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_startBuilding</span><span class="p">()</span>
+
+    <span class="c">##################################################################</span>
+    <span class="c">#################### CIRCUIT BUILD METHODS #######################</span>
+    <span class="c">##################################################################</span>
+
+    <span class="nd">@defer.inlineCallbacks</span>
+    <span class="k">def</span> <span class="nf">_startBuilding</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Begin building this circuit.</span>
+
+<span class="sd">        The following steps are taken to build a circuit:</span>
+
+<span class="sd">            1. Choose a path that satisfies this circuit&#39;s path constraints.</span>
+<span class="sd">            2. Get a TLS connection to the entry node on this circuit&#39;s</span>
+<span class="sd">               chosen path.</span>
+<span class="sd">            3. Notify this connection that it has a new circuit on it.</span>
+<span class="sd">            4. Begin the circuit handshake (i.e. send a Create2 cell to the</span>
+<span class="sd">               entry node).</span>
+<span class="sd">            5. Start listening for incoming cells (i.e. _pollReadQueue())</span>
+
+<span class="sd">        If any of these steps fail, the circuit will be destroyed.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="kn">from</span> <span class="nn">oppy.shared</span> <span class="kn">import</span> <span class="n">connection_pool</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">path</span> <span class="o">=</span> <span class="k">yield</span> <span class="bp">self</span><span class="o">.</span><span class="n">_selector</span><span class="o">.</span><span class="n">getPath</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">path_constraints</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">IndexError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Circuit {} could not get a valid path. Destroying circuit.&quot;</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">)</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_closeCircuit</span><span class="p">()</span>
+            <span class="k">return</span>
+
+        <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Circuit {} using path: {}.&quot;</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="p">))</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">connection</span> <span class="o">=</span> <span class="k">yield</span> <span class="n">connection_pool</span><span class="o">.</span><span class="n">getConnection</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">entry</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Circuit {}&#39;s TLS connection failed: {}. Circuit destroyed.&quot;</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">))</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_closeCircuit</span><span class="p">()</span>
+            <span class="k">return</span>
+
+        <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Circuit {} got a connection to {}.&quot;</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">entry</span><span class="o">.</span><span class="n">address</span><span class="p">))</span>
+
+        <span class="c"># register ourselves with this circuit&#39;s connection</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">addNewCircuit</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="c"># start the handshaking process immediately</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_initiateCircuitHandshake</span><span class="p">()</span>
+        <span class="c"># can now start listening for incoming cells</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pollReadQueue</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">_initiateCircuitHandshake</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Initiate the handshaking process for this circuit.</span>
+
+<span class="sd">        Create a new handshake object (for now, always an NTorFSM) and</span>
+<span class="sd">        write the initiating cell to the entry node (for now, always a</span>
+<span class="sd">        Create2 cell).</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_handshake</span> <span class="o">=</span> <span class="n">NTorFSM</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="p">,</span>
+                                  <span class="bp">self</span><span class="o">.</span><span class="n">_crypt_path</span><span class="p">)</span>
+        <span class="n">cell</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handshake</span><span class="o">.</span><span class="n">getInitiatingCell</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">writeCell</span><span class="p">(</span><span class="n">cell</span><span class="p">)</span>
+        <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Circuit {} initiated NTor handshake with {}.&quot;</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">entry</span><span class="o">.</span><span class="n">address</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">_openCircuit</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;_openCircuit() is called when this circuit has successfully</span>
+<span class="sd">        completed a handshake and derived crypto keys with every relay</span>
+<span class="sd">        on its path.</span>
+
+<span class="sd">        Do three things as soon as this circuit finishes extending itself</span>
+<span class="sd">        through its whole path:</span>
+
+<span class="sd">            1. Set this circuit&#39;s state to CState.OPEN</span>
+<span class="sd">            2. Notify the CircuitManager that this circuit is ready to</span>
+<span class="sd">               be assinged streams.</span>
+<span class="sd">            3. Start listening for incoming data from local applications</span>
+<span class="sd">               (i.e. _pollWriteQueue()).</span>
+
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="kn">from</span> <span class="nn">oppy.shared</span> <span class="kn">import</span> <span class="n">circuit_manager</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_handshake</span> <span class="o">=</span> <span class="bp">None</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="o">=</span> <span class="n">CState</span><span class="o">.</span><span class="n">OPEN</span>
+        <span class="c"># notify circuit manager we&#39;re open</span>
+        <span class="n">circuit_manager</span><span class="o">.</span><span class="n">circuitOpened</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="c"># notify each pending stream that we&#39;re now open</span>
+        <span class="c"># can now start listening for outgoing data</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pollWriteQueue</span><span class="p">()</span>
+
+    <span class="c">##################################################################</span>
+    <span class="c">###################### QUEUEING METHODS ##########################</span>
+    <span class="c">##################################################################</span>
+
+    <span class="k">def</span> <span class="nf">_pollReadQueue</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Try pulling a cell from this circuit&#39;s read_queue and add a</span>
+<span class="sd">        callback to handle the cell when it&#39;s available.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_read_deferred</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_queue</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_read_deferred</span><span class="o">.</span><span class="n">addCallback</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_recvCell</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_pollWriteQueue</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Try pulling data from this circuit&#39;s write_queue and add a</span>
+<span class="sd">        callback to process the data when it&#39;s available.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_write_deferred</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_write_queue</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_write_deferred</span><span class="o">.</span><span class="n">addCallback</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_writeData</span><span class="p">)</span>
+
+<div class="viewcode-block" id="Circuit.writeData"><a class="viewcode-back" href="../../docs/circuit/circuit.html#circuit.circuit.Circuit.writeData">[docs]</a>    <span class="k">def</span> <span class="nf">writeData</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">stream_id</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Put a tuple of (data, stream_id) on this circuit&#39;s write_queue.</span>
+<span class="sd">        </span>
+<span class="sd">        Called by stream&#39;s when they want to write data to this circuit.</span>
+
+<span class="sd">        .. warning:: writeData() requires that *data* can fit in a single</span>
+<span class="sd">            relay cell. The caller should take care to split data into</span>
+<span class="sd">            properly sized chunks.</span>
+
+<span class="sd">        :param str data: data string to write to this circuit</span>
+<span class="sd">        :param int stream_id: id of the stream writing this data</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="n">MAX_RPAYLOAD_LEN</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_write_queue</span><span class="o">.</span><span class="n">put</span><span class="p">((</span><span class="n">data</span><span class="p">,</span> <span class="n">stream_id</span><span class="p">))</span>
+</div>
+<div class="viewcode-block" id="Circuit.recvCell"><a class="viewcode-back" href="../../docs/circuit/circuit.html#circuit.circuit.Circuit.recvCell">[docs]</a>    <span class="k">def</span> <span class="nf">recvCell</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cell</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Put the incoming cell on this circuit&#39;s read_queue to be processed.</span>
+<span class="sd">        </span>
+<span class="sd">        Called be a connection when it receives a cell addressed to this</span>
+<span class="sd">        circuit.</span>
+<span class="sd">        </span>
+<span class="sd">        :param cell cell: incoming cell that was received from the network</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_read_queue</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">cell</span><span class="p">)</span>
+
+    <span class="c">##################################################################</span>
+    <span class="c">################### CELL PROCESSING METHODS ######################</span>
+    <span class="c">##################################################################</span>
+</div>
+    <span class="k">def</span> <span class="nf">_writeData</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data_stream_id_tuple</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Write data to this circuit&#39;s connection.</span>
+
+<span class="sd">        Do the following:</span>
+
+<span class="sd">            1. Package this data (with appropriate stream_id) into a</span>
+<span class="sd">               RelayDataCell.</span>
+<span class="sd">            2. Encrypt this cell.</span>
+<span class="sd">            3. Write this cell to this circuit&#39;s connection.</span>
+<span class="sd">            4. Decrement this circuit&#39;s packaging window (if we can&#39;t</span>
+<span class="sd">               package anymore data, enter state CState.BUFFERING, otherwise</span>
+<span class="sd">               begin polling from _write_queue again).</span>
+
+<span class="sd">        :param tuple, str, int data_stream_id_tuple: tuple of (data, stream_id)</span>
+<span class="sd">            to package into a RelayData cell</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">data</span><span class="p">,</span> <span class="n">stream_id</span> <span class="o">=</span> <span class="n">data_stream_id_tuple</span>
+        <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="n">MAX_RPAYLOAD_LEN</span>
+        <span class="n">cell</span> <span class="o">=</span> <span class="n">RelayDataCell</span><span class="o">.</span><span class="n">make</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">,</span> <span class="n">stream_id</span><span class="p">,</span> <span class="n">data</span><span class="p">)</span>
+        <span class="n">enc</span> <span class="o">=</span> <span class="n">crypto</span><span class="o">.</span><span class="n">encryptCellToTarget</span><span class="p">(</span><span class="n">cell</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_crypt_path</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">writeCell</span><span class="p">(</span><span class="n">enc</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_decPackageWindow</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">_recvCell</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cell</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Pass *cell* to the appropriate handler depending on this circuit&#39;s</span>
+<span class="sd">        state and listen for more incoming cells.</span>
+
+<span class="sd">        :param cell cell: the cell received from the network.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="o">==</span> <span class="n">CState</span><span class="o">.</span><span class="n">PENDING</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_recvHandshakeCell</span><span class="p">(</span><span class="n">cell</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_recvCircuitCell</span><span class="p">(</span><span class="n">cell</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pollReadQueue</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">_recvHandshakeCell</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cell</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Called when this circuit is in state CState.PENDING and a cell</span>
+<span class="sd">        is received from the network.</span>
+
+<span class="sd">        Attempt to process this cell. If the handshake receives an invalid</span>
+<span class="sd">        or malformed cell, destroy this circuit. If the handshake has</span>
+<span class="sd">        a new cell to send, immediately write it to this circuit&#39;s</span>
+<span class="sd">        connection. If the handshake is complete with every node on this</span>
+<span class="sd">        circuit&#39;s path, open the circuit (e.g. call self._openCircuit()).</span>
+
+<span class="sd">        :param cell cell: the cell received from the network.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handshake</span><span class="o">.</span><span class="n">recvCell</span><span class="p">(</span><span class="n">cell</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">ReceivedDestroyCell</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">destroyCircuitFromRelay</span><span class="p">(</span><span class="n">cell</span><span class="p">)</span>
+            <span class="k">return</span>
+        <span class="k">except</span> <span class="p">(</span><span class="n">BadHandshakeState</span><span class="p">,</span> <span class="n">HandshakeFailed</span><span class="p">,</span> <span class="n">UnexpectedCell</span><span class="p">)</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">destroyCircuitProtocolViolation</span><span class="p">(</span><span class="n">cell</span><span class="p">)</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">))</span>
+            <span class="k">return</span>
+        <span class="k">except</span> <span class="n">KeyDerivationFailed</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;NTor key derivation failed on circuit {}.&quot;</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">destroyCircuitProtocolViolation</span><span class="p">(</span><span class="n">cell</span><span class="p">)</span>
+            <span class="k">return</span>
+
+        <span class="k">if</span> <span class="n">response</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">writeCell</span><span class="p">(</span><span class="n">response</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handshake</span><span class="o">.</span><span class="n">isDone</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_openCircuit</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_handshake</span> <span class="o">=</span> <span class="bp">None</span>
+
+    <span class="k">def</span> <span class="nf">_recvCircuitCell</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cell</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Called when this circuit receives a cell and it&#39;s state is</span>
+<span class="sd">        CState.OPEN.</span>
+
+<span class="sd">        If we received a non-backward cell or a DestroyCell, immediately</span>
+<span class="sd">        tear-down the circuit. Otherwise process as usual.</span>
+
+<span class="sd">        :param cell cell: the cell received from the network.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="c"># receiving a non-backward cell violates the Tor Protocol.</span>
+        <span class="c"># immediately tear down the circuit</span>
+        <span class="k">if</span> <span class="n">cell</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">cmd</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">BACKWARD_CELLS</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">destroyCircuitProtocolViolation</span><span class="p">(</span><span class="n">cell</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">cell</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">cmd</span> <span class="o">==</span> <span class="n">DESTROY_CMD</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_processDestroy</span><span class="p">(</span><span class="n">cell</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_recvRelayCell</span><span class="p">(</span><span class="n">cell</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_recvRelayCell</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cell</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Called when this circuit receives some sort of RelayCell from</span>
+<span class="sd">        the network.</span>
+
+<span class="sd">        Decrypt this cell and take action based on the cell type and this</span>
+<span class="sd">        circuit&#39;s current state. Each valid backward cell type has a</span>
+<span class="sd">        handler function that&#39;s called when that cell type is received.</span>
+
+<span class="sd">        .. note:: oppy just drops any unrecognized cells.</span>
+
+<span class="sd">        :param cell cell: cell received from the network</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">cell</span><span class="p">,</span> <span class="n">origin</span> <span class="o">=</span> <span class="n">crypto</span><span class="o">.</span><span class="n">decryptCellUntilRecognized</span><span class="p">(</span><span class="n">cell</span><span class="p">,</span>
+                                                             <span class="bp">self</span><span class="o">.</span><span class="n">_crypt_path</span><span class="p">)</span>
+        <span class="c"># drop unrecognized cells</span>
+        <span class="k">except</span> <span class="n">UnrecognizedCell</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Circuit {} received an unrecognized cell.&quot;</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">))</span>
+            <span class="k">return</span>
+
+        <span class="n">cmd</span> <span class="o">=</span> <span class="n">cell</span><span class="o">.</span><span class="n">rheader</span><span class="o">.</span><span class="n">cmd</span>
+        <span class="n">handler</span> <span class="o">=</span> <span class="n">Circuit</span><span class="o">.</span><span class="n">_response_table</span><span class="p">[</span><span class="n">cmd</span><span class="p">]</span><span class="o">.</span><span class="n">__get__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">))</span>
+        <span class="n">handler</span><span class="p">(</span><span class="n">cell</span><span class="p">,</span> <span class="n">origin</span><span class="p">)</span>
+
+<div class="viewcode-block" id="Circuit.writeCell"><a class="viewcode-back" href="../../docs/circuit/circuit.html#circuit.circuit.Circuit.writeCell">[docs]</a>    <span class="k">def</span> <span class="nf">writeCell</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cell</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Write a cell to this circuit&#39;s connection.</span>
+
+<span class="sd">        :param cell cell: cell to write to this circuit&#39;s connection</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">writeCell</span><span class="p">(</span><span class="n">cell</span><span class="p">)</span>
+</div>
+    <span class="k">def</span> <span class="nf">_processDestroy</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cell</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Called when this circuit receives a destroy cell from the</span>
+<span class="sd">        network.</span>
+
+<span class="sd">        Immediately tear-down this circuit and all associated streams.</span>
+
+<span class="sd">        :param oppy.cell.fixedlen.DestroyCell cell: destroy cell that this</span>
+<span class="sd">            circuit received.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">destroyCircuitFromRelay</span><span class="p">(</span><span class="n">cell</span><span class="p">)</span>
+
+    <span class="nd">@dispatch</span><span class="p">(</span><span class="n">_response_table</span><span class="p">,</span> <span class="n">RELAY_DATA_CMD</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">_processRelayData</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cell</span><span class="p">,</span> <span class="n">origin</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Called when this circuit receives an incoming RelayData cell.</span>
+
+<span class="sd">        Take the following actions:</span>
+
+<span class="sd">            1. Pass the relay payload in this cell to the stream with the</span>
+<span class="sd">               stream_id contained in this RelayData cell. Drop the cell</span>
+<span class="sd">               if we have no reference to the stream_id contained in the</span>
+<span class="sd">               cell.</span>
+<span class="sd">            2. Decrement this circuit&#39;s delivery window (which will</span>
+<span class="sd">               automatically send a RelaySendMeCell if this circuit&#39;s</span>
+<span class="sd">               deliver window is low enough).</span>
+<span class="sd">        </span>
+<span class="sd">        :param oppy.cell.relay.RelayDataCell cell: relay data cell recieved</span>
+<span class="sd">            from the network</span>
+<span class="sd">        :param int origin: which node on the circuit&#39;s path this cell</span>
+<span class="sd">            came from</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">sid</span> <span class="o">=</span> <span class="n">cell</span><span class="o">.</span><span class="n">rheader</span><span class="o">.</span><span class="n">stream_id</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_stream_map</span><span class="p">[</span><span class="n">sid</span><span class="p">]</span><span class="o">.</span><span class="n">recvData</span><span class="p">(</span><span class="n">cell</span><span class="o">.</span><span class="n">rpayload</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_decDeliverWindow</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+            <span class="n">msg</span>  <span class="o">=</span> <span class="s">&#39;Got a RELAY_DATA cell for non-existent stream {} &#39;</span>
+            <span class="n">msg</span> <span class="o">+=</span> <span class="s">&#39;on circuit {}. Dropping cell.&#39;</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">sid</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">))</span>
+
+    <span class="nd">@dispatch</span><span class="p">(</span><span class="n">_response_table</span><span class="p">,</span> <span class="n">RELAY_END_CMD</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">_processRelayEnd</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cell</span><span class="p">,</span> <span class="n">origin</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Called when this circuit receives a RelayEndCell.</span>
+
+<span class="sd">        Tear down the stream associated with the stream in the RelayEndCell</span>
+<span class="sd">        if this circuit has a reference to it. Drop the cell if we have</span>
+<span class="sd">        no reference to this stream.</span>
+
+<span class="sd">        :param oppy.cell.relay.RelayEndCell cell: relay end cell recieved</span>
+<span class="sd">            from the network</span>
+<span class="sd">        :param int origin: which node on the circuit&#39;s path this cell</span>
+<span class="sd">            came from</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">sid</span> <span class="o">=</span> <span class="n">cell</span><span class="o">.</span><span class="n">rheader</span><span class="o">.</span><span class="n">stream_id</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_stream_map</span><span class="p">[</span><span class="n">sid</span><span class="p">]</span><span class="o">.</span><span class="n">closeFromCircuit</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">cell</span><span class="o">.</span><span class="n">reason</span> <span class="o">!=</span> <span class="n">REASON_DONE</span><span class="p">:</span>
+                <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Received a RELAY_END cell on stream {}, and reason &quot;</span>
+                <span class="n">msg</span> <span class="o">+=</span> <span class="s">&quot;was not REASON_DONE. Reason: {}.&quot;</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">sid</span><span class="p">,</span> <span class="n">cell</span><span class="o">.</span><span class="n">reason</span><span class="p">))</span>
+        <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+            <span class="n">msg</span>  <span class="o">=</span> <span class="s">&#39;Circuit {} received a RELAY_END cell for &#39;</span>
+            <span class="n">msg</span> <span class="o">+=</span> <span class="s">&#39;non-existent stream {}. Dropping cell.&#39;</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">,</span> <span class="n">sid</span><span class="p">))</span>
+
+    <span class="nd">@dispatch</span><span class="p">(</span><span class="n">_response_table</span><span class="p">,</span> <span class="n">RELAY_CONNECTED_CMD</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">_processRelayConnected</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cell</span><span class="p">,</span> <span class="n">origin</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Called when this circuit receives a RelayConnectedCell.</span>
+
+<span class="sd">        Notify the stream associated with this cell&#39;s stream id that it&#39;s</span>
+<span class="sd">        now connected. Drop the cell if we have no reference to this</span>
+<span class="sd">        stream id.</span>
+
+<span class="sd">        :param oppy.cell.relay.RelayConnectedCell cell: relay connected cell</span>
+<span class="sd">            recieved from the network</span>
+<span class="sd">        :param int origin: which node on the circuit&#39;s path this cell</span>
+<span class="sd">            came from</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">sid</span> <span class="o">=</span> <span class="n">cell</span><span class="o">.</span><span class="n">rheader</span><span class="o">.</span><span class="n">stream_id</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_stream_map</span><span class="p">[</span><span class="n">sid</span><span class="p">]</span><span class="o">.</span><span class="n">streamConnected</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+            <span class="n">msg</span>  <span class="o">=</span> <span class="s">&#39;Received a RELAY_CONNECTED cell for non-existent &#39;</span>
+            <span class="n">msg</span> <span class="o">+=</span> <span class="s">&#39;stream {} on circuit {}.&#39;</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">sid</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">))</span>
+
+    <span class="nd">@dispatch</span><span class="p">(</span><span class="n">_response_table</span><span class="p">,</span> <span class="n">RELAY_SENDME_CMD</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">_processRelaySendMe</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cell</span><span class="p">,</span> <span class="n">origin</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Called when this circuit receives a RelaySendMeCell.</span>
+
+<span class="sd">        If this is a circuit-level sendme cell (i.e. its stream id is zero)</span>
+<span class="sd">        then increment this circuit&#39;s packaging window. If this circuit</span>
+<span class="sd">        is currently in state CState.BUFFERING **and** receiving this</span>
+<span class="sd">        sendme cell has incremented its packaging window &gt; 0, then begin</span>
+<span class="sd">        listening for incoming data again (i.e. self._pollWriteQueue).</span>
+
+<span class="sd">        If this is a stream-level sendme cell, increment the corresponding</span>
+<span class="sd">        stream&#39;s packaging window. Drop the cell if we have no reference</span>
+<span class="sd">        to the stream associated with its stream id.</span>
+
+<span class="sd">        Drop this cell if it&#39;s received while we&#39;re still building the</span>
+<span class="sd">        circuit.</span>
+
+<span class="sd">        :param oppy.cell.relay.RelaySendMeCell cell: relay sendme cell</span>
+<span class="sd">            recieved from the network</span>
+<span class="sd">        :param int origin: which node on the circuit&#39;s path this cell</span>
+<span class="sd">            came from</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">sid</span> <span class="o">=</span> <span class="n">cell</span><span class="o">.</span><span class="n">rheader</span><span class="o">.</span><span class="n">stream_id</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="o">==</span> <span class="n">CState</span><span class="o">.</span><span class="n">PENDING</span><span class="p">:</span>
+            <span class="n">msg</span>  <span class="o">=</span> <span class="s">&quot;Received a RELAY_SENDME cell on circuit {} destined for &quot;</span>
+            <span class="n">msg</span> <span class="o">+=</span> <span class="s">&quot;stream {}, but circuit&#39;s state was {}. Dropping cell.&quot;</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">,</span> <span class="n">sid</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="p">))</span>
+            <span class="k">return</span>
+
+        <span class="k">if</span> <span class="n">sid</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_incPackageWindow</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_stream_map</span><span class="p">[</span><span class="n">sid</span><span class="p">]</span><span class="o">.</span><span class="n">incrementPackageWindow</span><span class="p">()</span>
+            <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+                <span class="n">msg</span>  <span class="o">=</span> <span class="s">&quot;Circuit {} received a RELAY_SENDME on &quot;</span>
+                <span class="n">msg</span> <span class="o">+=</span> <span class="s">&quot;non-existent stream {}.&quot;</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">,</span> <span class="n">sid</span><span class="p">))</span>
+
+    <span class="nd">@dispatch</span><span class="p">(</span><span class="n">_response_table</span><span class="p">,</span> <span class="n">RELAY_TRUNCATED_CMD</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">_processRelayTruncated</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cell</span><span class="p">,</span> <span class="n">origin</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Called when this circuit receives a RelayTruncatedCell.</span>
+
+<span class="sd">        oppy currently doesn&#39;t know how to rebuild or cannabalize circuits,</span>
+<span class="sd">        so we just destroy the whole circuit if we get a truncated cell.</span>
+
+<span class="sd">        :param oppy.cell.relay.RelayTruncatedCell cell: relay truncated cell</span>
+<span class="sd">            recieved from the network</span>
+<span class="sd">        :param int origin: which node on the circuit&#39;s path this cell</span>
+<span class="sd">            came from</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Received a RELAY_TRUNCATED cell on circuit {}.&quot;</span>
+        <span class="n">msg</span> <span class="o">+=</span> <span class="s">&quot; We can&#39;t rebuild circuit paths yet, so circuit {}&quot;</span>
+        <span class="n">msg</span> <span class="o">+=</span> <span class="s">&quot; and all associated streams will be destroyed.&quot;</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">destroyCircuitFromRelay</span><span class="p">(</span><span class="n">cell</span><span class="p">)</span>
+
+    <span class="nd">@dispatch</span><span class="p">(</span><span class="n">_response_table</span><span class="p">,</span> <span class="n">RELAY_DROP_CMD</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">_processRelayDrop</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cell</span><span class="p">,</span> <span class="n">origin</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Called when this circuit receives a RelayDrop cell.</span>
+
+<span class="sd">        Just drop it :)</span>
+
+<span class="sd">        :param oppy.cell.relay.RelayDropCell cell: relay drop cell</span>
+<span class="sd">            recieved from the network</span>
+<span class="sd">        :param int origin: which node on the circuit&#39;s path this cell</span>
+<span class="sd">            came from</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">msg</span>  <span class="o">=</span> <span class="s">&#39;Received a RELAY_DROP cell on circuit {} in state {}. &#39;</span>
+        <span class="n">msg</span> <span class="o">+=</span> <span class="s">&#39;Dropping cell.&#39;</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="p">))</span>
+
+    <span class="nd">@dispatch</span><span class="p">(</span><span class="n">_response_table</span><span class="p">,</span> <span class="n">RELAY_RESOLVED_CMD</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">_processRelayResolved</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cell</span><span class="p">,</span> <span class="n">origin</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Called when this circuit receives a RelayResolvedCell.</span>
+
+<span class="sd">        oppy doesn&#39;t know how to handle these right now, so we just drop</span>
+<span class="sd">        them.</span>
+
+<span class="sd">        :param oppy.cell.relay.RelayResolvedCell cell: relay resolved cell</span>
+<span class="sd">            recieved from the network</span>
+<span class="sd">        :param int origin: which node on the circuit&#39;s path this cell</span>
+<span class="sd">            came from</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">msg</span>  <span class="o">=</span> <span class="s">&quot;Circuit {} received a RELAY_RESOLVED cell destined for stream &quot;</span>
+        <span class="n">msg</span> <span class="o">+=</span> <span class="s">&quot;{}, but we don&#39;t know how to handle these yet. Dropping cell.&quot;</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">,</span> <span class="n">cell</span><span class="o">.</span><span class="n">rheader</span><span class="o">.</span><span class="n">stream_id</span><span class="p">))</span>
+
+    <span class="c">##################################################################</span>
+    <span class="c">################### STREAM PROCESSING METHODS ####################</span>
+    <span class="c">##################################################################</span>
+
+    <span class="c"># return True iff this circuit&#39;s exit node can handle the request</span>
+<div class="viewcode-block" id="Circuit.canHandleRequest"><a class="viewcode-back" href="../../docs/circuit/circuit.html#circuit.circuit.Circuit.canHandleRequest">[docs]</a>    <span class="k">def</span> <span class="nf">canHandleRequest</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Return **True** if this circuit can (probably/possibly) handle</span>
+<span class="sd">        the *request*.</span>
+
+<span class="sd">        If this circuit is pending we may not have a relay exit relay whose</span>
+<span class="sd">        exit policy we can check, so make a guess and return True if the</span>
+<span class="sd">        request is of the same type as this circuit. Always return True if</span>
+<span class="sd">        this request is a host type request (this is probably wrong). If the</span>
+<span class="sd">        circuit is open and we do have an exit policy to check, then return</span>
+<span class="sd">        whether or not this circuit&#39;s exit relay&#39;s exit policy claims to</span>
+<span class="sd">        support this request.</span>
+
+<span class="sd">        .. note:: For host type requests, I&#39;d like to just check the exit</span>
+<span class="sd">            policy of the exit relay to see if it allows exits to the</span>
+<span class="sd">            desired port. However, I can&#39;t seem to get stem&#39;s</span>
+<span class="sd">            exit_policy.can_exit_to() function to work when it&#39;s passed only</span>
+<span class="sd">            a port with no IP address. I&#39;m not sure if this is a bug in</span>
+<span class="sd">            stem or how I&#39;m using it. Ideally, in the case of host type</span>
+<span class="sd">            requests, we&#39;d check if the exit relay&#39;s exit policy claims to</span>
+<span class="sd">            support exits to the requested port. Currently stem&#39;s</span>
+<span class="sd">            exit_policy.can_exit_to() always returns False when passed just</span>
+<span class="sd">            a port as an argument (at least when it&#39;s loaded with real</span>
+<span class="sd">            exit policies from server descriptors).</span>
+
+<span class="sd">        :param oppy.util.exitrequest.ExitRequest request: the request to</span>
+<span class="sd">            check if this circuit can handle</span>
+<span class="sd">        :returns: **bool** **True** if this circuit thinks it can handle</span>
+<span class="sd">            the request, False otherwise</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="c"># don&#39;t accept any new requests if we&#39;re buffering</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="o">==</span> <span class="n">CState</span><span class="o">.</span><span class="n">BUFFERING</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">False</span>
+
+        <span class="c"># workaround for stem&#39;s exit_policy.can_exit_to method always</span>
+        <span class="c"># returning false when passed just a port. ideally, we&#39;d check if</span>
+        <span class="c"># exiting to the desired port is allowed and then make a more educated</span>
+        <span class="c"># guess about whether or not the exit will support this stream. for</span>
+        <span class="c"># now, if it&#39;s a host request we just assume we can support it.</span>
+        <span class="k">if</span> <span class="n">request</span><span class="o">.</span><span class="n">is_host</span><span class="p">:</span>
+            <span class="c"># XXX stem (possible) bug workaround</span>
+            <span class="c">#return self.path.exit.exit_policy.can_exit_to(port=request.port)</span>
+            <span class="k">return</span> <span class="bp">True</span>
+        <span class="k">elif</span> <span class="n">request</span><span class="o">.</span><span class="n">is_ipv6</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">ctype</span> <span class="o">==</span> <span class="n">CType</span><span class="o">.</span><span class="n">IPv6</span><span class="p">:</span>
+            <span class="c"># just guess that we can support the request if we&#39;re pending</span>
+            <span class="c"># and it&#39;s of the type that this circuit is</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="o">==</span> <span class="n">CState</span><span class="o">.</span><span class="n">PENDING</span><span class="p">:</span>
+                <span class="k">return</span> <span class="bp">True</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exit</span><span class="o">.</span><span class="n">exit_policy</span><span class="o">.</span><span class="n">can_exit_to</span><span class="p">(</span><span class="n">address</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">addr</span><span class="p">,</span>
+                                                          <span class="n">port</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">port</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">request</span><span class="o">.</span><span class="n">is_ipv4</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">ctype</span> <span class="o">==</span> <span class="n">CType</span><span class="o">.</span><span class="n">IPv4</span><span class="p">:</span>
+        <span class="c"># just guess that we can support the request if we&#39;re pending</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="o">==</span> <span class="n">CState</span><span class="o">.</span><span class="n">PENDING</span><span class="p">:</span>
+                <span class="k">return</span> <span class="bp">True</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exit</span><span class="o">.</span><span class="n">exit_policy</span><span class="o">.</span><span class="n">can_exit_to</span><span class="p">(</span><span class="n">address</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">addr</span><span class="p">,</span>
+                                                          <span class="n">port</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">port</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">False</span>
+</div>
+    <span class="k">def</span> <span class="nf">_closeAllStreams</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Close all streams associated with this circuit.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">for</span> <span class="n">stream</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stream_map</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+            <span class="n">stream</span><span class="o">.</span><span class="n">closeFromCircuit</span><span class="p">()</span>
+
+<div class="viewcode-block" id="Circuit.unregisterStream"><a class="viewcode-back" href="../../docs/circuit/circuit.html#circuit.circuit.Circuit.unregisterStream">[docs]</a>    <span class="k">def</span> <span class="nf">unregisterStream</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">stream</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Unregister *stream* from this circuit.</span>
+
+<span class="sd">        Remove the stream from this circuit&#39;s stream map and send a</span>
+<span class="sd">        RelayEndCell. If the number of streams on this circuit drops to</span>
+<span class="sd">        zero, check with the circuit manager to see if this circuit should</span>
+<span class="sd">        be destroyed. If so, tear down the circuit.</span>
+
+<span class="sd">        :param oppy.stream.stream.Stream stream: stream to unregister</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="kn">from</span> <span class="nn">oppy.shared</span> <span class="kn">import</span> <span class="n">circuit_manager</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stream_map</span><span class="p">[</span><span class="n">stream</span><span class="o">.</span><span class="n">stream_id</span><span class="p">]</span>
+            <span class="n">cell</span> <span class="o">=</span> <span class="n">RelayEndCell</span><span class="o">.</span><span class="n">make</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">,</span> <span class="n">stream</span><span class="o">.</span><span class="n">stream_id</span><span class="p">)</span>
+            <span class="n">enc</span> <span class="o">=</span> <span class="n">crypto</span><span class="o">.</span><span class="n">encryptCellToTarget</span><span class="p">(</span><span class="n">cell</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_crypt_path</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">writeCell</span><span class="p">(</span><span class="n">enc</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Circuit {} notified that stream {} was closed, but &quot;</span>
+            <span class="n">msg</span> <span class="o">+=</span> <span class="s">&quot;circuit has no reference to this stream.&quot;</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">,</span> <span class="n">stream</span><span class="o">.</span><span class="n">stream_id</span><span class="p">))</span>
+
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_stream_map</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">circuit_manager</span><span class="o">.</span><span class="n">shouldDestroyCircuit</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="ow">is</span> <span class="bp">True</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_sendDestroyCell</span><span class="p">()</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_closeCircuit</span><span class="p">()</span>
+                <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Destroyed unused circuit {0}.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">)</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Circuit.initiateStream"><a class="viewcode-back" href="../../docs/circuit/circuit.html#circuit.circuit.Circuit.initiateStream">[docs]</a>    <span class="k">def</span> <span class="nf">initiateStream</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">stream</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Initiate a new stream by sending a RelayBeginCell.</span>
+
+<span class="sd">        Create the begin cell, encrypt it, and immediately write it to this</span>
+<span class="sd">        circuit&#39;s connection.</span>
+
+<span class="sd">        :param oppy.stream.stream.Stream stream: stream on behalf of which</span>
+<span class="sd">            we&#39;re sending a RelayBeginCell</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">cell</span> <span class="o">=</span> <span class="n">RelayBeginCell</span><span class="o">.</span><span class="n">make</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">,</span> <span class="n">stream</span><span class="o">.</span><span class="n">stream_id</span><span class="p">,</span>
+                                   <span class="n">stream</span><span class="o">.</span><span class="n">request</span><span class="p">)</span>
+        <span class="n">enc</span> <span class="o">=</span> <span class="n">crypto</span><span class="o">.</span><span class="n">encryptCellToTarget</span><span class="p">(</span><span class="n">cell</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_crypt_path</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">writeCell</span><span class="p">(</span><span class="n">enc</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Circuit.registerStream"><a class="viewcode-back" href="../../docs/circuit/circuit.html#circuit.circuit.Circuit.registerStream">[docs]</a>    <span class="k">def</span> <span class="nf">registerStream</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">stream</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Register the new *stream* on this circuit.</span>
+
+<span class="sd">        Set the stream&#39;s stream_id and add it to this circuit&#39;s stream map.</span>
+
+<span class="sd">        :param oppy.stream.stream.Stream stream: stream to add to this circuit</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_stream_map</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_stream_ctr</span><span class="p">]</span> <span class="o">=</span> <span class="n">stream</span>
+        <span class="n">stream</span><span class="o">.</span><span class="n">stream_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stream_ctr</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_stream_ctr</span> <span class="o">+=</span> <span class="mi">1</span>
+</div>
+<div class="viewcode-block" id="Circuit.sendStreamSendMe"><a class="viewcode-back" href="../../docs/circuit/circuit.html#circuit.circuit.Circuit.sendStreamSendMe">[docs]</a>    <span class="k">def</span> <span class="nf">sendStreamSendMe</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">stream_id</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Send a stream-level RelaySendMe cell with its stream_id equal to</span>
+<span class="sd">        *stream_id*.</span>
+
+<span class="sd">        Construct the send me cell, encrypt it, and immediately write it to</span>
+<span class="sd">        this circuit&#39;s connection.</span>
+
+<span class="sd">        :param int stream_id: stream_id to use in the RelaySendMeCell</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">cell</span> <span class="o">=</span> <span class="n">RelaySendMeCell</span><span class="o">.</span><span class="n">make</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">,</span> <span class="n">stream_id</span><span class="o">=</span><span class="n">stream_id</span><span class="p">)</span>
+        <span class="n">enc</span> <span class="o">=</span> <span class="n">crypto</span><span class="o">.</span><span class="n">encryptCellToTarget</span><span class="p">(</span><span class="n">cell</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_crypt_path</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">writeCell</span><span class="p">(</span><span class="n">enc</span><span class="p">)</span>
+
+    <span class="c">##################################################################</span>
+    <span class="c">#################### FLOW CONTROL METHODS ########################</span>
+    <span class="c">##################################################################</span>
+</div>
+    <span class="k">def</span> <span class="nf">_decDeliverWindow</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Decrement this circuit&#39;s deliver window.</span>
+<span class="sd">        </span>
+<span class="sd">        Called when we deliver an incoming RelayDataCell&#39;s payload to</span>
+<span class="sd">        a stream. If the delivery window is below the default threshold, send</span>
+<span class="sd">        a RelaySendMeCell.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_deliver_window</span> <span class="o">-=</span> <span class="mi">1</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_deliver_window</span> <span class="o">&lt;=</span> <span class="n">SENDME_THRESHOLD</span><span class="p">:</span>
+            <span class="n">cell</span> <span class="o">=</span> <span class="n">RelaySendMeCell</span><span class="o">.</span><span class="n">make</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">)</span>
+            <span class="n">enc</span> <span class="o">=</span> <span class="n">crypto</span><span class="o">.</span><span class="n">encryptCellToTarget</span><span class="p">(</span><span class="n">cell</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_crypt_path</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">writeCell</span><span class="p">(</span><span class="n">enc</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_deliver_window</span> <span class="o">+=</span> <span class="n">WINDOW_SIZE</span>
+
+    <span class="k">def</span> <span class="nf">_decPackageWindow</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Decrement this circuit&#39;s package window.</span>
+
+<span class="sd">        If the package window is above zero, listen for more incoming local</span>
+<span class="sd">        data. Otherwise, enter a state CState.BUFFERING. In this buffering</span>
+<span class="sd">        state, this circuit will not accept any new streams and will not</span>
+<span class="sd">        write any data to its connection. It will leave it&#39;s buffering state</span>
+<span class="sd">        and become open again when it receives enough RelaySendMeCell&#39;s to</span>
+<span class="sd">        move its package window above zero again.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_package_window</span> <span class="o">-=</span> <span class="mi">1</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_package_window</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_pollWriteQueue</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="o">=</span> <span class="n">CState</span><span class="o">.</span><span class="n">BUFFERING</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_write_deferred</span> <span class="o">=</span> <span class="bp">None</span>
+
+    <span class="k">def</span> <span class="nf">_incPackageWindow</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Increment this circuit&#39;s package window.</span>
+
+<span class="sd">        Called when this circuit receives a RelaySendMeCell. If this circuit</span>
+<span class="sd">        is currently in state CState.BUFFERING **and** receiving this</span>
+<span class="sd">        sendme cell has moved this circuit&#39;s package window above zero,</span>
+<span class="sd">        transition back to CState.OPEN and begin listening for incoming local</span>
+<span class="sd">        data again.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_package_window</span> <span class="o">+=</span> <span class="n">WINDOW_SIZE</span>
+        <span class="c"># if we&#39;re buffering, we can start writing again</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="o">==</span> <span class="n">CState</span><span class="o">.</span><span class="n">BUFFERING</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_package_window</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="o">=</span> <span class="n">CState</span><span class="o">.</span><span class="n">OPEN</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_write_deferred</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_pollWriteQueue</span><span class="p">()</span>
+
+    <span class="c">##################################################################</span>
+    <span class="c">################### CIRCUIT TEARDOWN METHODS #####################</span>
+    <span class="c">##################################################################</span>
+
+<div class="viewcode-block" id="Circuit.destroyCircuitProtocolViolation"><a class="viewcode-back" href="../../docs/circuit/circuit.html#circuit.circuit.Circuit.destroyCircuitProtocolViolation">[docs]</a>    <span class="k">def</span> <span class="nf">destroyCircuitProtocolViolation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cell</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Destroy a circuit because the Tor protocol was violated.</span>
+
+<span class="sd">        Send a DestroyCell and close the circuit.</span>
+
+<span class="sd">        :param cell cell: received cell that violated the Tor protocol.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Circuit {0} received a {1} cell that violates the Tor &quot;</span>
+        <span class="n">msg</span> <span class="o">+=</span> <span class="s">&quot;protocol. Destroying circuit.&quot;</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">,</span> <span class="n">cell</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">cmd</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_sendDestroyCell</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_closeCircuit</span><span class="p">()</span>
+</div>
+<div class="viewcode-block" id="Circuit.destroyCircuitFromRelay"><a class="viewcode-back" href="../../docs/circuit/circuit.html#circuit.circuit.Circuit.destroyCircuitFromRelay">[docs]</a>    <span class="k">def</span> <span class="nf">destroyCircuitFromRelay</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cell</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Called when a DestroyCell is received from a relay on</span>
+<span class="sd">        this circuit&#39;s path.</span>
+
+<span class="sd">        Immediately close the circuit. We don&#39;t need to send a DestroyCell</span>
+<span class="sd">        in this case.</span>
+
+<span class="sd">        :param cell cell: either the DestroyCell or the RelayTruncatedCell</span>
+<span class="sd">            that was received.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;{} cell received on circuit {}. Destroying circuit.&quot;</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">cell</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">cmd</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_closeCircuit</span><span class="p">()</span>
+</div>
+<div class="viewcode-block" id="Circuit.destroyCircuitFromManager"><a class="viewcode-back" href="../../docs/circuit/circuit.html#circuit.circuit.Circuit.destroyCircuitFromManager">[docs]</a>    <span class="k">def</span> <span class="nf">destroyCircuitFromManager</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Called by the circuit manager when it decides to destroy this</span>
+<span class="sd">        circuit.</span>
+
+<span class="sd">        Send a destroy cell and notify this circuit&#39;s connection that this</span>
+<span class="sd">        circuit is now closed.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Circuit {} destroyed by circuit manager.&quot;</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_sendDestroyCell</span><span class="p">()</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">connection</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">circuitDestroyed</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Circuit.destroyCircuitFromConnection"><a class="viewcode-back" href="../../docs/circuit/circuit.html#circuit.circuit.Circuit.destroyCircuitFromConnection">[docs]</a>    <span class="k">def</span> <span class="nf">destroyCircuitFromConnection</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Called when a connection closes this circuit (usually because</span>
+<span class="sd">        the connection went down).</span>
+
+<span class="sd">        Primarily called when we lose the TLS connection to our connection</span>
+<span class="sd">        object.  Do a &#39;hard&#39; destroy and immediately close all associated</span>
+<span class="sd">        streams.  Do not send a destroy cell.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Circuit {} destroyed by its connection.&quot;</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_closeCircuit</span><span class="p">()</span>
+</div>
+    <span class="k">def</span> <span class="nf">_sendDestroyCell</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Send a destroy cell.</span>
+
+<span class="sd">        .. note:: reason NONE is always used when sending forward destroy</span>
+<span class="sd">            cells to avoid leaking version information.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">connection</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">cell</span> <span class="o">=</span> <span class="n">DestroyCell</span><span class="o">.</span><span class="n">make</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">writeCell</span><span class="p">(</span><span class="n">cell</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_closeCircuit</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Close this circuit.</span>
+
+<span class="sd">        Close all associated streams, notify the circuit manager this</span>
+<span class="sd">        circuit has closed, and notify this circuit&#39;s connection that this</span>
+<span class="sd">        circuit has closed.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="kn">from</span> <span class="nn">oppy.shared</span> <span class="kn">import</span> <span class="n">circuit_manager</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_closeAllStreams</span><span class="p">()</span>
+        <span class="n">circuit_manager</span><span class="o">.</span><span class="n">circuitDestroyed</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">connection</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">connection</span><span class="o">.</span><span class="n">circuitDestroyed</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">)</span></div>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

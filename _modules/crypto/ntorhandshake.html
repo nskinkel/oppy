@@ -1,0 +1,277 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>crypto.ntorhandshake &mdash; oppy 0.1 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <link rel="top" title="oppy 0.1 documentation" href="../../index.html" />
+    <link rel="up" title="Module code" href="../index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for crypto.ntorhandshake</h1><div class="highlight"><pre>
+<span class="c"># Copyright 2014, 2015, Nik Kinkel</span>
+<span class="c"># See LICENSE for licensing information</span>
+
+<span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">.. topic:: Details</span>
+
+<span class="sd">    NTorHandsake objects provide the methods for doing the ntor handshake</span>
+<span class="sd">    key derivations and crypto operations. NTorHandshakes objects do the</span>
+<span class="sd">    following jobs:</span>
+
+<span class="sd">        - Create temporary public/private Curve 25519 keys</span>
+<span class="sd">        - Create the initial onion skin</span>
+<span class="sd">        - Derive key material from a Created2 or Extended2 cell</span>
+<span class="sd">        - Create and initialize a RelayCrypto object, ready for use by</span>
+<span class="sd">          a circuit (RelayCrypto objects are just wrappers around AES128-CTR</span>
+<span class="sd">          ciphers and SHA-1 running digests, initialized with the derived key</span>
+<span class="sd">          material)</span>
+
+
+<span class="sd">.. warning:: NTorHandshakes do not safely erase/clear memory of private keys.</span>
+
+<span class="sd">&#39;&#39;&#39;</span>
+<span class="kn">import</span> <span class="nn">base64</span>
+<span class="kn">import</span> <span class="nn">hashlib</span>
+<span class="kn">import</span> <span class="nn">hkdf</span>
+
+<span class="kn">from</span> <span class="nn">nacl</span> <span class="kn">import</span> <span class="n">c</span>
+<span class="kn">from</span> <span class="nn">nacl.public</span> <span class="kn">import</span> <span class="n">PrivateKey</span><span class="p">,</span> <span class="n">PublicKey</span>
+
+<span class="kn">from</span> <span class="nn">oppy.crypto</span> <span class="kn">import</span> <span class="n">util</span>
+<span class="kn">from</span> <span class="nn">oppy.crypto.exceptions</span> <span class="kn">import</span> <span class="n">KeyDerivationFailed</span>
+<span class="kn">from</span> <span class="nn">oppy.crypto.relaycrypto</span> <span class="kn">import</span> <span class="n">RelayCrypto</span>
+<span class="kn">from</span> <span class="nn">oppy.util</span> <span class="kn">import</span> <span class="n">tools</span>
+
+
+<span class="n">PROTOID</span>     <span class="o">=</span> <span class="s">&quot;ntor-curve25519-sha256-1&quot;</span>
+<span class="n">T_MAC</span>       <span class="o">=</span> <span class="n">PROTOID</span> <span class="o">+</span> <span class="s">&quot;:mac&quot;</span>
+<span class="n">T_KEY</span>       <span class="o">=</span> <span class="n">PROTOID</span> <span class="o">+</span> <span class="s">&quot;:key_extract&quot;</span>
+<span class="n">T_VERIFY</span>    <span class="o">=</span> <span class="n">PROTOID</span> <span class="o">+</span> <span class="s">&quot;:verify&quot;</span>
+<span class="n">M_EXPAND</span>    <span class="o">=</span> <span class="n">PROTOID</span> <span class="o">+</span> <span class="s">&quot;:key_expand&quot;</span>
+<span class="n">SERVER_STR</span>  <span class="o">=</span> <span class="s">&quot;Server&quot;</span>
+
+<span class="n">CURVE25519_PUBKEY_LEN</span>   <span class="o">=</span> <span class="mi">32</span>
+<span class="n">DIGEST_LEN</span>              <span class="o">=</span> <span class="mi">20</span>
+<span class="n">KEY_LEN</span>                 <span class="o">=</span> <span class="mi">16</span>
+<span class="n">NTOR_ONIONSKIN_LEN</span>      <span class="o">=</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">CURVE25519_PUBKEY_LEN</span> <span class="o">+</span> <span class="n">DIGEST_LEN</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="NTorHandshake"><a class="viewcode-back" href="../../docs/crypto/ntorhandshake.html#crypto.ntorhandshake.NTorHandshake">[docs]</a><span class="k">class</span> <span class="nc">NTorHandshake</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">relay</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        :param stem.descriptor.server_descriptor.RelayDescriptor relay:</span>
+<span class="sd">            the relay that we&#39;re doing an ntor handshake with</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_signing_key</span> <span class="o">=</span> <span class="n">tools</span><span class="o">.</span><span class="n">signingKeyToSHA1</span><span class="p">(</span><span class="n">relay</span><span class="o">.</span><span class="n">signing_key</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_ntor_onion_key</span> <span class="o">=</span> <span class="n">base64</span><span class="o">.</span><span class="n">b64decode</span><span class="p">(</span><span class="n">relay</span><span class="o">.</span><span class="n">ntor_onion_key</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_secret_key</span> <span class="o">=</span> <span class="n">PrivateKey</span><span class="o">.</span><span class="n">generate</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_public_key</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_secret_key</span><span class="o">.</span><span class="n">public_key</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">is_bad</span> <span class="o">=</span> <span class="bp">False</span>
+
+<div class="viewcode-block" id="NTorHandshake.createOnionSkin"><a class="viewcode-back" href="../../docs/crypto/ntorhandshake.html#crypto.ntorhandshake.NTorHandshake.createOnionSkin">[docs]</a>    <span class="k">def</span> <span class="nf">createOnionSkin</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Build and return an *onion skin* to this handshake&#39;s relay.</span>
+
+<span class="sd">        .. note:: See tor-spec Section 5.1.4 for more information.</span>
+
+<span class="sd">        :returns: **str** raw byte string for this *onion skin*</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">b</span>  <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_signing_key</span>
+        <span class="n">b</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ntor_onion_key</span>
+        <span class="n">b</span> <span class="o">+=</span> <span class="nb">bytes</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_public_key</span><span class="p">)</span>
+
+        <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">b</span><span class="p">)</span> <span class="o">==</span> <span class="n">NTOR_ONIONSKIN_LEN</span>
+        <span class="k">return</span> <span class="n">b</span>
+</div>
+<div class="viewcode-block" id="NTorHandshake.deriveRelayCrypto"><a class="viewcode-back" href="../../docs/crypto/ntorhandshake.html#crypto.ntorhandshake.NTorHandshake.deriveRelayCrypto">[docs]</a>    <span class="k">def</span> <span class="nf">deriveRelayCrypto</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cell</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Derive shared key material for this ntor handshake; create and</span>
+<span class="sd">        return actual cipher and hash instances inside a RelayCrypto object.</span>
+
+<span class="sd">        .. note:: See tor-spec Section 5.1.4, 5.2.2 for more details.</span>
+
+<span class="sd">        :param cell cell: Created2 cell or Extended2 cell used to derive</span>
+<span class="sd">            shared keys</span>
+<span class="sd">        :returns: **oppy.crypto.relaycrypto.RelayCrypto** object initialized</span>
+<span class="sd">            with the derived key material.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">is_bad</span> <span class="o">=</span> <span class="bp">False</span>
+        <span class="n">hdata</span> <span class="o">=</span> <span class="n">cell</span><span class="o">.</span><span class="n">hdata</span>
+
+        <span class="n">relay_pubkey</span> <span class="o">=</span> <span class="n">cell</span><span class="o">.</span><span class="n">hdata</span><span class="p">[:</span> <span class="n">CURVE25519_PUBKEY_LEN</span><span class="p">]</span>
+        <span class="n">AUTH</span> <span class="o">=</span> <span class="n">hdata</span><span class="p">[</span><span class="n">CURVE25519_PUBKEY_LEN</span><span class="p">:</span> <span class="n">CURVE25519_PUBKEY_LEN</span> <span class="o">+</span> <span class="n">DIGEST_LEN</span><span class="p">]</span>
+
+        <span class="n">secret_input</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_buildSecretInput</span><span class="p">(</span><span class="n">relay_pubkey</span><span class="p">)</span>
+        <span class="n">verify</span> <span class="o">=</span> <span class="n">util</span><span class="o">.</span><span class="n">makeHMACSHA256</span><span class="p">(</span><span class="n">msg</span><span class="o">=</span><span class="n">secret_input</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">T_VERIFY</span><span class="p">)</span>
+        <span class="n">auth_input</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_buildAuthInput</span><span class="p">(</span><span class="n">verify</span><span class="p">,</span> <span class="n">relay_pubkey</span><span class="p">)</span>
+        <span class="n">auth_input</span> <span class="o">=</span> <span class="n">util</span><span class="o">.</span><span class="n">makeHMACSHA256</span><span class="p">(</span><span class="n">msg</span><span class="o">=</span><span class="n">auth_input</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">T_MAC</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">is_bad</span> <span class="o">|=</span> <span class="n">util</span><span class="o">.</span><span class="n">constantStrEqual</span><span class="p">(</span><span class="n">AUTH</span><span class="p">,</span> <span class="n">auth_input</span><span class="p">)</span>
+
+        <span class="n">ret</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_makeRelayCrypto</span><span class="p">(</span><span class="n">secret_input</span><span class="p">)</span>
+
+        <span class="c"># don&#39;t fail until the very end to avoid leaking timing information</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_bad</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">KeyDerivationFailed</span><span class="p">()</span>
+
+        <span class="k">return</span> <span class="n">ret</span>
+</div>
+    <span class="k">def</span> <span class="nf">_makeRelayCrypto</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">secret_input</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Derive shared key material using HKDF from secret_input.</span>
+
+<span class="sd">        :returns: **oppy.crypto.relaycrypto.RelayCrypto** initialized with</span>
+<span class="sd">            shared key data</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">prk</span> <span class="o">=</span> <span class="n">hkdf</span><span class="o">.</span><span class="n">hkdf_extract</span><span class="p">(</span><span class="n">salt</span><span class="o">=</span><span class="n">T_KEY</span><span class="p">,</span> <span class="n">input_key_material</span><span class="o">=</span><span class="n">secret_input</span><span class="p">,</span>
+                                <span class="nb">hash</span><span class="o">=</span><span class="n">hashlib</span><span class="o">.</span><span class="n">sha256</span><span class="p">)</span>
+        <span class="n">km</span> <span class="o">=</span> <span class="n">hkdf</span><span class="o">.</span><span class="n">hkdf_expand</span><span class="p">(</span><span class="n">pseudo_random_key</span><span class="o">=</span><span class="n">prk</span><span class="p">,</span> <span class="n">info</span><span class="o">=</span><span class="n">M_EXPAND</span><span class="p">,</span>
+                              <span class="n">length</span><span class="o">=</span><span class="mi">72</span><span class="p">,</span> <span class="nb">hash</span><span class="o">=</span><span class="n">hashlib</span><span class="o">.</span><span class="n">sha256</span><span class="p">)</span>
+
+        <span class="n">df</span> <span class="o">=</span> <span class="n">km</span><span class="p">[:</span> <span class="n">DIGEST_LEN</span><span class="p">]</span>
+        <span class="n">db</span> <span class="o">=</span> <span class="n">km</span><span class="p">[</span><span class="n">DIGEST_LEN</span> <span class="p">:</span> <span class="n">DIGEST_LEN</span> <span class="o">*</span> <span class="mi">2</span><span class="p">]</span>
+        <span class="n">kf</span> <span class="o">=</span> <span class="n">km</span><span class="p">[</span><span class="n">DIGEST_LEN</span> <span class="o">*</span> <span class="mi">2</span> <span class="p">:</span> <span class="n">DIGEST_LEN</span> <span class="o">*</span> <span class="mi">2</span> <span class="o">+</span> <span class="n">KEY_LEN</span><span class="p">]</span>
+        <span class="n">kb</span> <span class="o">=</span> <span class="n">km</span><span class="p">[</span><span class="n">DIGEST_LEN</span> <span class="o">*</span> <span class="mi">2</span> <span class="o">+</span> <span class="n">KEY_LEN</span> <span class="p">:</span> <span class="n">DIGEST_LEN</span> <span class="o">*</span> <span class="mi">2</span> <span class="o">+</span> <span class="n">KEY_LEN</span> <span class="o">*</span> <span class="mi">2</span><span class="p">]</span>
+
+        <span class="n">f_digest</span> <span class="o">=</span> <span class="n">hashlib</span><span class="o">.</span><span class="n">sha1</span><span class="p">(</span><span class="n">df</span><span class="p">)</span>
+        <span class="n">b_digest</span> <span class="o">=</span> <span class="n">hashlib</span><span class="o">.</span><span class="n">sha1</span><span class="p">(</span><span class="n">db</span><span class="p">)</span>
+        <span class="n">f_cipher</span> <span class="o">=</span> <span class="n">util</span><span class="o">.</span><span class="n">makeAES128CTRCipher</span><span class="p">(</span><span class="n">kf</span><span class="p">)</span>
+        <span class="n">b_cipher</span> <span class="o">=</span> <span class="n">util</span><span class="o">.</span><span class="n">makeAES128CTRCipher</span><span class="p">(</span><span class="n">kb</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">RelayCrypto</span><span class="p">(</span><span class="n">forward_digest</span><span class="o">=</span><span class="n">f_digest</span><span class="p">,</span>
+                           <span class="n">backward_digest</span><span class="o">=</span><span class="n">b_digest</span><span class="p">,</span>
+                           <span class="n">forward_cipher</span><span class="o">=</span><span class="n">f_cipher</span><span class="p">,</span>
+                           <span class="n">backward_cipher</span><span class="o">=</span><span class="n">b_cipher</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_buildAuthInput</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">verify</span><span class="p">,</span> <span class="n">relay_pubkey</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Build and return auth input as a byte string.</span>
+
+<span class="sd">        .. note:: See tor-spec Section 5.1.4 for more details.</span>
+
+<span class="sd">        :param str verify: the verification data derived from secret_input</span>
+<span class="sd">        :param str relay_pubkey: the remote relay&#39;s CURVE_25519 public</span>
+<span class="sd">            key received in the Created2/Extended2 cell</span>
+<span class="sd">        :returns: **str** auth_input</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">b</span>  <span class="o">=</span> <span class="n">verify</span>
+        <span class="n">b</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_signing_key</span>
+        <span class="n">b</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ntor_onion_key</span>
+        <span class="n">b</span> <span class="o">+=</span> <span class="n">relay_pubkey</span>
+        <span class="n">b</span> <span class="o">+=</span> <span class="nb">bytes</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_public_key</span><span class="p">)</span>
+        <span class="n">b</span> <span class="o">+=</span> <span class="n">PROTOID</span>
+        <span class="n">b</span> <span class="o">+=</span> <span class="n">SERVER_STR</span>
+        <span class="k">return</span> <span class="n">b</span>
+
+    <span class="k">def</span> <span class="nf">_buildSecretInput</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">relay_pubkey</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Build and return secret input as a byte string.</span>
+
+<span class="sd">        .. note:: See tor-spec Section 5.1.4 for more details.</span>
+
+<span class="sd">        :param relay_pubkey: the remote relay&#39;s CURVE_25519 public key</span>
+<span class="sd">            received in the Created2/Extended2 cell</span>
+<span class="sd">        :returns: **str** secret_input</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">b</span>  <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scalarMult</span><span class="p">(</span><span class="n">relay_pubkey</span><span class="p">)</span>
+        <span class="n">b</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_scalarMult</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_ntor_onion_key</span><span class="p">)</span>
+        <span class="n">b</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_signing_key</span>
+        <span class="n">b</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ntor_onion_key</span>
+        <span class="n">b</span> <span class="o">+=</span> <span class="nb">bytes</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_public_key</span><span class="p">)</span>
+        <span class="n">b</span> <span class="o">+=</span> <span class="n">relay_pubkey</span>
+        <span class="n">b</span> <span class="o">+=</span> <span class="n">PROTOID</span>
+        <span class="k">return</span> <span class="n">b</span>
+
+    <span class="k">def</span> <span class="nf">_scalarMult</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">base</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Perform base**self._secret_key.</span>
+
+<span class="sd">        Set self.is_bad if the result is all zeros.</span>
+
+<span class="sd">        .. note:: See tor-spec Section 5.1.4 for why this is an adequate</span>
+<span class="sd">        replacement for checking that none of the EXP() operations produced</span>
+<span class="sd">        the point at infinity.</span>
+
+<span class="sd">        :returns: **str** result</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="c"># args are: exponent, base</span>
+        <span class="n">ret</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">crypto_scalarmult</span><span class="p">(</span><span class="nb">bytes</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_secret_key</span><span class="p">),</span>
+                                  <span class="nb">bytes</span><span class="p">(</span><span class="n">PublicKey</span><span class="p">(</span><span class="n">base</span><span class="p">)))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">is_bad</span> <span class="o">|=</span> <span class="n">util</span><span class="o">.</span><span class="n">constantStrAllZero</span><span class="p">(</span><span class="n">ret</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">ret</span></div>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

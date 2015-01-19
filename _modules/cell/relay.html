@@ -1,0 +1,925 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>cell.relay &mdash; oppy 0.1 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <link rel="top" title="oppy 0.1 documentation" href="../../index.html" />
+    <link rel="up" title="Module code" href="../index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for cell.relay</h1><div class="highlight"><pre>
+<span class="c"># Copyright 2014, 2015, Nik Kinkel and David Johnston</span>
+<span class="c"># See LICENSE for licensing information</span>
+
+<span class="kn">import</span> <span class="nn">struct</span>
+
+<span class="kn">import</span> <span class="nn">oppy.cell.definitions</span> <span class="kn">as</span> <span class="nn">DEF</span>
+
+<span class="kn">from</span> <span class="nn">oppy.cell.exceptions</span> <span class="kn">import</span> <span class="n">BadRelayCellHeader</span><span class="p">,</span> <span class="n">BadPayloadData</span>
+<span class="kn">from</span> <span class="nn">oppy.cell.fixedlen</span> <span class="kn">import</span> <span class="n">FixedLenCell</span>
+
+
+<span class="n">RELAY_HEADER_LEN</span> <span class="o">=</span> <span class="mi">11</span>
+
+
+<div class="viewcode-block" id="RelayCell"><a class="viewcode-back" href="../../docs/cell/relay.html#cell.relay.RelayCell">[docs]</a><span class="k">class</span> <span class="nc">RelayCell</span><span class="p">(</span><span class="n">FixedLenCell</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;A container class for representing relay cells.</span>
+
+<span class="sd">    .. note:: All Relay cells are fixed-length (length determined by</span>
+<span class="sd">        Link Protocol version in use).</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+
+    <span class="n">rheader</span> <span class="o">=</span> <span class="bp">None</span>
+    <span class="n">rpayload</span> <span class="o">=</span> <span class="bp">None</span>
+    <span class="n">_subclass_map</span> <span class="o">=</span> <span class="bp">None</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">header</span><span class="p">,</span> <span class="n">rheader</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">rpayload</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        :param :class:`~cell.fixedlen.FixedLenCell.Header` header:</span>
+<span class="sd">            Initialized fixed-length header to use with this RelayCell.</span>
+<span class="sd">        :param :class:`~cell.relay.RelayCell.RelayHeader` rheader:</span>
+<span class="sd">            Initialized RelayCell header to use.</span>
+<span class="sd">        :param str rpayload: this cell&#39;s relay payload</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">header</span> <span class="o">=</span> <span class="n">header</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rheader</span> <span class="o">=</span> <span class="n">rheader</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rpayload</span> <span class="o">=</span> <span class="n">rpayload</span>
+
+<div class="viewcode-block" id="RelayCell.getBytes"><a class="viewcode-back" href="../../docs/cell/relay.html#cell.relay.RelayCell.getBytes">[docs]</a>    <span class="k">def</span> <span class="nf">getBytes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">trimmed</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Construct and return the byte string represented by this cell.</span>
+
+<span class="sd">        :param bool trimmed: If **True**, return the non-padded payload.</span>
+<span class="sd">            Otherwise pad the payload with null bytes to the fixed-size</span>
+<span class="sd">            length in use according to the Link Protocol version.</span>
+<span class="sd">        :returns: **str** byte string represented by this cell</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">ret</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">getBytes</span><span class="p">()</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">rheader</span><span class="o">.</span><span class="n">getBytes</span><span class="p">()</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">rpayload</span>
+        <span class="k">return</span> <span class="n">FixedLenCell</span><span class="o">.</span><span class="n">padCellBytes</span><span class="p">(</span><span class="n">ret</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">link_version</span><span class="p">)</span>
+</div>
+    <span class="k">def</span> <span class="nf">_parsePayload</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_parseRelayHeader</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_parseRelayPayload</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_parseRelayHeader</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Parse *data* and extract this cell&#39;s relay header values.</span>
+
+<span class="sd">        :param str data: data string to parse and extract values from</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">start</span><span class="p">,</span> <span class="n">end</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">relayHeaderRange</span><span class="p">()</span>
+        <span class="n">rheader</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">unpack</span><span class="p">(</span><span class="n">RelayCell</span><span class="o">.</span><span class="n">RelayHeader</span><span class="o">.</span><span class="n">FORMAT</span><span class="p">,</span> <span class="n">data</span><span class="p">[</span><span class="n">start</span><span class="p">:</span><span class="n">end</span><span class="p">])</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">RelayCell</span><span class="o">.</span><span class="n">RelayHeader</span><span class="p">(</span><span class="o">*</span><span class="n">rheader</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">r</span><span class="o">.</span><span class="n">rpayload_len</span> <span class="o">&gt;</span> <span class="n">DEF</span><span class="o">.</span><span class="n">MAX_RPAYLOAD_LEN</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&#39;rpayload_len {} found, but max rpayload_len is {}&#39;</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">rpayload_len</span><span class="p">,</span> <span class="n">DEF</span><span class="o">.</span><span class="n">MAX_RPAYLOAD_LEN</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="n">BadRelayCellHeader</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">r</span><span class="o">.</span><span class="n">cmd</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">DEF</span><span class="o">.</span><span class="n">RELAY_CMD_IDS</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&#39;Unrecognized relay cmd {}&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">r</span><span class="o">.</span><span class="n">cmd</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="n">BadRelayCellHeader</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">rheader</span> <span class="o">=</span> <span class="n">r</span>
+
+    <span class="k">def</span> <span class="nf">_parseRelayPayload</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Parse *data* and extract this cell&#39;s relay payload.</span>
+
+<span class="sd">        :param str data: data string to parse and extract values from</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">start</span><span class="p">,</span> <span class="n">end</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">relayPayloadRange</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rpayload</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">start</span><span class="p">:</span><span class="n">end</span><span class="p">]</span>
+
+<div class="viewcode-block" id="RelayCell.relayHeaderRange"><a class="viewcode-back" href="../../docs/cell/relay.html#cell.relay.RelayCell.relayHeaderRange">[docs]</a>    <span class="k">def</span> <span class="nf">relayHeaderRange</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Return a two-tuple indicating the (start,end) indices of</span>
+<span class="sd">        this cell&#39;s relay header.</span>
+
+<span class="sd">        :returns: **tuple, int** (start, end) indices of this cell&#39;s</span>
+<span class="sd">            relay header</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">start</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">payloadRange</span><span class="p">()</span>
+        <span class="n">end</span> <span class="o">=</span> <span class="n">start</span> <span class="o">+</span> <span class="n">RELAY_HEADER_LEN</span>
+        <span class="k">return</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span>
+</div>
+<div class="viewcode-block" id="RelayCell.relayPayloadRange"><a class="viewcode-back" href="../../docs/cell/relay.html#cell.relay.RelayCell.relayPayloadRange">[docs]</a>    <span class="k">def</span> <span class="nf">relayPayloadRange</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Return a two-tuple indicating the (start,end) indices of</span>
+<span class="sd">        this cell&#39;s relay header.</span>
+
+<span class="sd">        :returns: **tuple, int** (start, end) indices of this cell&#39;s</span>
+<span class="sd">            relay payload</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">_</span><span class="p">,</span> <span class="n">start</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">relayHeaderRange</span><span class="p">()</span>
+        <span class="n">end</span> <span class="o">=</span> <span class="n">start</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">rheader</span><span class="o">.</span><span class="n">rpayload_len</span>
+        <span class="k">return</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span>
+</div>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">_getSubclass</span><span class="p">(</span><span class="n">cls</span><span class="p">,</span> <span class="n">header</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Uses *header* to interpret the given cell data. A cell</span>
+<span class="sd">        type which will be appropriate for encapsulating/representing this cell</span>
+<span class="sd">        data is then selected and returned.</span>
+
+<span class="sd">        :type str header: RelayCell.RelayHeader</span>
+<span class="sd">        :returns: Concrete subclass of RelayCell</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">if</span> <span class="n">RelayCell</span><span class="o">.</span><span class="n">_subclass_map</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">RelayCell</span><span class="o">.</span><span class="n">_initSubclassMap</span><span class="p">()</span>
+
+        <span class="n">cmd</span> <span class="o">=</span> <span class="n">RelayCell</span><span class="o">.</span><span class="n">_extractRelayCmd</span><span class="p">(</span><span class="n">header</span><span class="p">,</span> <span class="n">data</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">RelayCell</span><span class="o">.</span><span class="n">_subclass_map</span><span class="p">[</span><span class="n">cmd</span><span class="p">]</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">_initSubclassMap</span><span class="p">():</span>
+        <span class="n">RelayCell</span><span class="o">.</span><span class="n">_subclass_map</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">DEF</span><span class="o">.</span><span class="n">RELAY_BEGIN_CMD</span>     <span class="p">:</span>   <span class="n">RelayBeginCell</span><span class="p">,</span>
+            <span class="n">DEF</span><span class="o">.</span><span class="n">RELAY_DATA_CMD</span>      <span class="p">:</span>   <span class="n">RelayDataCell</span><span class="p">,</span>
+            <span class="n">DEF</span><span class="o">.</span><span class="n">RELAY_END_CMD</span>       <span class="p">:</span>   <span class="n">RelayEndCell</span><span class="p">,</span>
+            <span class="n">DEF</span><span class="o">.</span><span class="n">RELAY_CONNECTED_CMD</span> <span class="p">:</span>   <span class="n">RelayConnectedCell</span><span class="p">,</span>
+            <span class="n">DEF</span><span class="o">.</span><span class="n">RELAY_SENDME_CMD</span>    <span class="p">:</span>   <span class="n">RelaySendMeCell</span><span class="p">,</span>
+            <span class="n">DEF</span><span class="o">.</span><span class="n">RELAY_EXTEND_CMD</span>    <span class="p">:</span>   <span class="n">RelayExtendCell</span><span class="p">,</span>
+            <span class="n">DEF</span><span class="o">.</span><span class="n">RELAY_EXTENDED_CMD</span>  <span class="p">:</span>   <span class="n">RelayExtendedCell</span><span class="p">,</span>
+            <span class="n">DEF</span><span class="o">.</span><span class="n">RELAY_TRUNCATE_CMD</span>  <span class="p">:</span>   <span class="n">RelayTruncateCell</span><span class="p">,</span>
+            <span class="n">DEF</span><span class="o">.</span><span class="n">RELAY_TRUNCATED_CMD</span> <span class="p">:</span>   <span class="n">RelayTruncatedCell</span><span class="p">,</span>
+            <span class="n">DEF</span><span class="o">.</span><span class="n">RELAY_DROP_CMD</span>      <span class="p">:</span>   <span class="n">RelayDropCell</span><span class="p">,</span>
+            <span class="n">DEF</span><span class="o">.</span><span class="n">RELAY_RESOLVE_CMD</span>   <span class="p">:</span>   <span class="n">RelayResolveCell</span><span class="p">,</span>
+            <span class="n">DEF</span><span class="o">.</span><span class="n">RELAY_RESOLVED_CMD</span>  <span class="p">:</span>   <span class="n">RelayResolvedCell</span><span class="p">,</span>
+            <span class="n">DEF</span><span class="o">.</span><span class="n">RELAY_BEGIN_DIR_CMD</span> <span class="p">:</span>   <span class="n">RelayBeginDirCell</span><span class="p">,</span>
+            <span class="n">DEF</span><span class="o">.</span><span class="n">RELAY_EXTEND2_CMD</span>   <span class="p">:</span>   <span class="n">RelayExtend2Cell</span><span class="p">,</span>
+            <span class="n">DEF</span><span class="o">.</span><span class="n">RELAY_EXTENDED2_CMD</span> <span class="p">:</span>   <span class="n">RelayExtended2Cell</span>
+        <span class="p">}</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">_extractRecognized</span><span class="p">(</span><span class="n">header</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Use *header* to interpret cell data; extract and return</span>
+<span class="sd">        *recognized* field value.</span>
+
+<span class="sd">        :param :class:`~cell.relay.RelayCell.RelayHeader` header:</span>
+<span class="sd">            relay header in use</span>
+<span class="sd">        :param str data: data string to extract command from</span>
+<span class="sd">        :returns: **str** recongnized command</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">circ_len</span> <span class="o">=</span> <span class="mi">2</span> <span class="k">if</span> <span class="n">header</span><span class="o">.</span><span class="n">link_version</span> <span class="o">&lt;=</span> <span class="mi">3</span> <span class="k">else</span> <span class="mi">4</span>
+        <span class="n">start</span> <span class="o">=</span> <span class="n">circ_len</span> <span class="o">+</span> <span class="mi">1</span> <span class="o">+</span> <span class="mi">1</span>
+        <span class="n">end</span> <span class="o">=</span> <span class="n">start</span> <span class="o">+</span> <span class="mi">2</span>
+        <span class="k">return</span> <span class="n">data</span><span class="p">[</span><span class="n">start</span><span class="p">:</span><span class="n">end</span><span class="p">]</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">_extractRelayCmd</span><span class="p">(</span><span class="n">header</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Use *header* to interpret the given cell data; extract and</span>
+<span class="sd">        return *relay_cmd* field value.</span>
+
+<span class="sd">        :param :class:`cell.relay.RelayCell.RelayHeader` header:</span>
+<span class="sd">            relay cell header to use</span>
+<span class="sd">        :param str data: data string to extract values from</span>
+<span class="sd">        :returns: **int** relay_cmd</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">circ_len</span> <span class="o">=</span> <span class="mi">2</span> <span class="k">if</span> <span class="n">header</span><span class="o">.</span><span class="n">link_version</span> <span class="o">&lt;=</span> <span class="mi">3</span> <span class="k">else</span> <span class="mi">4</span>
+        <span class="n">rh_start</span> <span class="o">=</span> <span class="n">circ_len</span> <span class="o">+</span> <span class="mi">1</span>
+        <span class="p">(</span><span class="n">rcmd</span><span class="p">,)</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">unpack</span><span class="p">(</span><span class="s">&quot;!B&quot;</span><span class="p">,</span> <span class="n">data</span><span class="p">[</span><span class="n">rh_start</span><span class="p">:</span><span class="n">rh_start</span> <span class="o">+</span> <span class="mi">1</span><span class="p">])</span>
+        <span class="k">return</span> <span class="n">rcmd</span>
+
+    <span class="k">def</span> <span class="nf">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">fmt</span> <span class="o">=</span> <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__name__</span> <span class="o">+</span> <span class="s">&quot;(header={}, rheader={}, rpayload={})&quot;</span>
+        <span class="k">return</span> <span class="n">fmt</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="p">),</span>
+                          <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">rheader</span><span class="p">),</span>
+                          <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">rpayload</span><span class="p">))</span>
+
+<div class="viewcode-block" id="RelayCell.RelayHeader"><a class="viewcode-back" href="../../docs/cell/relay.html#cell.relay.RelayCell.RelayHeader">[docs]</a>    <span class="k">class</span> <span class="nc">RelayHeader</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;A simple container for relay header information.&#39;&#39;&#39;</span>
+
+        <span class="n">FORMAT</span> <span class="o">=</span> <span class="s">&quot;!B2sH4sH&quot;</span>
+
+        <span class="n">cmd</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="n">recognized</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="n">stream_id</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="n">digest</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="n">rpayload_len</span> <span class="o">=</span> <span class="bp">None</span>
+
+        <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cmd</span><span class="p">,</span> <span class="n">recognized</span><span class="p">,</span> <span class="n">stream_id</span><span class="p">,</span> <span class="n">digest</span><span class="p">,</span> <span class="n">rpayload_len</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">cmd</span> <span class="o">=</span> <span class="n">cmd</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">recognized</span> <span class="o">=</span> <span class="n">recognized</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">stream_id</span> <span class="o">=</span> <span class="n">stream_id</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">digest</span> <span class="o">=</span> <span class="n">digest</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">rpayload_len</span> <span class="o">=</span> <span class="n">rpayload_len</span>
+
+<div class="viewcode-block" id="RelayCell.RelayHeader.getBytes"><a class="viewcode-back" href="../../docs/cell/relay.html#cell.relay.RelayCell.RelayHeader.getBytes">[docs]</a>        <span class="k">def</span> <span class="nf">getBytes</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+            <span class="sd">&#39;&#39;&#39;Construct and return the byte string represented by this</span>
+<span class="sd">            cell.</span>
+
+<span class="sd">            :returns: **str** byte string represented by this cell.</span>
+<span class="sd">            &#39;&#39;&#39;</span>
+            <span class="n">fmt</span> <span class="o">=</span> <span class="n">RelayCell</span><span class="o">.</span><span class="n">RelayHeader</span><span class="o">.</span><span class="n">FORMAT</span>
+            <span class="k">return</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="n">fmt</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">cmd</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">recognized</span><span class="p">,</span>
+                               <span class="bp">self</span><span class="o">.</span><span class="n">stream_id</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">digest</span><span class="p">,</span>
+                               <span class="bp">self</span><span class="o">.</span><span class="n">rpayload_len</span><span class="p">)</span>
+</div>
+        <span class="k">def</span> <span class="nf">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+            <span class="n">fmt</span> <span class="o">=</span> <span class="s">&quot;RelayCell.RelayHeader(cmd={}, recognized={}, stream_id={}, &quot;</span>
+            <span class="n">fmt</span> <span class="o">+=</span> <span class="s">&quot;digest={}, rpayload_len={})&quot;</span>
+            <span class="k">return</span> <span class="n">fmt</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cmd</span><span class="p">),</span> <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">recognized</span><span class="p">),</span>
+                              <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stream_id</span><span class="p">),</span> <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">digest</span><span class="p">),</span>
+                              <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">rpayload_len</span><span class="p">))</span>
+
+</div></div>
+<div class="viewcode-block" id="RelayBeginDirCell"><a class="viewcode-back" href="../../docs/cell/relay.html#cell.relay.RelayBeginDirCell">[docs]</a><span class="k">class</span> <span class="nc">RelayBeginDirCell</span><span class="p">(</span><span class="n">RelayCell</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;.. note:: Not Implemented&#39;&#39;&#39;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">header</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s">&quot;Can&#39;t make RelayBeginDirCell yet.&quot;</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="RelayBeginCell"><a class="viewcode-back" href="../../docs/cell/relay.html#cell.relay.RelayBeginCell">[docs]</a><span class="k">class</span> <span class="nc">RelayBeginCell</span><span class="p">(</span><span class="n">RelayCell</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;.. note:: tor-spec, Section 6.2&#39;&#39;&#39;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">header</span><span class="p">,</span> <span class="n">rheader</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">addr</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">flags</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        :param :class:`~cell.fixedlen.FixedLenCell.Header` header:</span>
+<span class="sd">            fixed-length header to use in this cell</span>
+<span class="sd">        :param :class:`~cell.relay.RelayCell.RelayHeader` rheader:</span>
+<span class="sd">            relay header to use in this cell</span>
+<span class="sd">        :param str addr: address to begin a connection to (see tor-spec for</span>
+<span class="sd">            format)</span>
+<span class="sd">        :param list, int flags: big-endian integer(s) with bits set to indicate</span>
+<span class="sd">            addr flags, see tor-spec for details.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">header</span> <span class="o">=</span> <span class="n">header</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rheader</span> <span class="o">=</span> <span class="n">rheader</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">addr</span> <span class="o">=</span> <span class="n">addr</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">flags</span> <span class="o">=</span> <span class="n">flags</span>
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="RelayBeginCell.make"><a class="viewcode-back" href="../../docs/cell/relay.html#cell.relay.RelayBeginCell.make">[docs]</a>    <span class="k">def</span> <span class="nf">make</span><span class="p">(</span><span class="n">circ_id</span><span class="p">,</span> <span class="n">stream_id</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">flags</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">link_version</span><span class="o">=</span><span class="mi">3</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Build and return a RelayBegin cell, filling in default values</span>
+<span class="sd">        when possible.</span>
+
+<span class="sd">        Automatically create a default FixedLenCell.Header and</span>
+<span class="sd">        RelayCell.RelayHeader.</span>
+
+<span class="sd">        :param int circ_id: Circuit ID to use in this cell</span>
+<span class="sd">        :param int stream_id: Stream ID to use in this cell</span>
+<span class="sd">        :param oppy.util.ExitRequest request: destination this</span>
+<span class="sd">            cell will request a connection to</span>
+<span class="sd">        :param list, int flags: flags to use for this connection</span>
+<span class="sd">        :param int link_version: Link Protocol version in use on this</span>
+<span class="sd">            connection</span>
+<span class="sd">        :returns: :class:`~cell.relay.RelayBeginCell`</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">addr</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">flags</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">flags</span> <span class="o">=</span> <span class="p">[</span><span class="n">DEF</span><span class="o">.</span><span class="n">BEGIN_FLAG_IPv6_OK</span><span class="p">]</span>
+
+        <span class="n">f</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="k">for</span> <span class="n">flag</span> <span class="ow">in</span> <span class="n">flags</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">flag</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">DEF</span><span class="o">.</span><span class="n">RELAY_BEGIN_FLAGS</span><span class="p">:</span>
+                <span class="n">msg</span> <span class="o">=</span> <span class="s">&#39;Unrecognized Relay Begin flag: {}&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">flag</span><span class="p">)</span>
+                <span class="k">raise</span> <span class="n">BadPayloadData</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+            <span class="n">f</span> <span class="o">|=</span> <span class="p">(</span><span class="mi">1</span> <span class="o">&lt;&lt;</span> <span class="p">(</span><span class="n">flag</span> <span class="o">-</span> <span class="mi">1</span><span class="p">))</span>
+
+        <span class="n">flags</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;!I&#39;</span><span class="p">,</span> <span class="n">f</span><span class="p">)</span>
+
+        <span class="n">h</span> <span class="o">=</span> <span class="n">FixedLenCell</span><span class="o">.</span><span class="n">Header</span><span class="p">(</span><span class="n">circ_id</span><span class="o">=</span><span class="n">circ_id</span><span class="p">,</span>
+                                <span class="n">cmd</span><span class="o">=</span><span class="n">DEF</span><span class="o">.</span><span class="n">RELAY_CMD</span><span class="p">,</span>
+                                <span class="n">link_version</span><span class="o">=</span><span class="n">link_version</span><span class="p">)</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">RelayCell</span><span class="o">.</span><span class="n">RelayHeader</span><span class="p">(</span><span class="n">cmd</span><span class="o">=</span><span class="n">DEF</span><span class="o">.</span><span class="n">RELAY_BEGIN_CMD</span><span class="p">,</span>
+                                  <span class="n">recognized</span><span class="o">=</span><span class="n">DEF</span><span class="o">.</span><span class="n">RECOGNIZED</span><span class="p">,</span>
+                                  <span class="n">stream_id</span><span class="o">=</span><span class="n">stream_id</span><span class="p">,</span>
+                                  <span class="n">digest</span><span class="o">=</span><span class="n">DEF</span><span class="o">.</span><span class="n">EMPTY_DIGEST</span><span class="p">,</span>
+                                  <span class="n">rpayload_len</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">addr</span> <span class="o">+</span> <span class="n">flags</span><span class="p">))</span>
+
+        <span class="k">return</span> <span class="n">RelayBeginCell</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="n">rheader</span><span class="o">=</span><span class="n">r</span><span class="p">,</span> <span class="n">addr</span><span class="o">=</span><span class="n">addr</span><span class="p">,</span> <span class="n">flags</span><span class="o">=</span><span class="n">flags</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="RelayBeginCell.getBytes"><a class="viewcode-back" href="../../docs/cell/relay.html#cell.relay.RelayBeginCell.getBytes">[docs]</a>    <span class="k">def</span> <span class="nf">getBytes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">trimmed</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Build and return the raw byte string this cell represents.</span>
+
+<span class="sd">        :param bool trimmed: If **True**, do not pad this cell&#39;s payload.</span>
+<span class="sd">        :returns: **str** raw byte string represented by this cell</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">ret</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">getBytes</span><span class="p">()</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">rheader</span><span class="o">.</span><span class="n">getBytes</span><span class="p">()</span>
+        <span class="n">ret</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">addr</span>
+        <span class="n">ret</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">flags</span>
+        <span class="k">if</span> <span class="n">trimmed</span> <span class="ow">is</span> <span class="bp">True</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">ret</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">FixedLenCell</span><span class="o">.</span><span class="n">padCellBytes</span><span class="p">(</span><span class="n">ret</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">link_version</span><span class="p">)</span>
+</div>
+    <span class="k">def</span> <span class="nf">_parseRelayPayload</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="c"># Not yet implemented because of low-priority (OP does not receive</span>
+        <span class="c"># relay begin cells). In fact, we must immediately tear down a circuit</span>
+        <span class="c"># if we receive a RELAY_BEGIN cell since it&#39;s a forward cell.</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">fmt</span> <span class="o">=</span> <span class="s">&quot;RelayBeginCell({}, rheader={}, addr={}, flags={})&quot;</span>
+        <span class="k">return</span> <span class="n">fmt</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="p">),</span> <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">rheader</span><span class="p">),</span>
+                          <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">addr</span><span class="p">),</span> <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">flags</span><span class="p">))</span>
+
+</div>
+<span class="n">ZERO_ADDR_STR</span>  <span class="o">=</span> <span class="s">&#39;</span><span class="se">\x00\x00\x00\x00</span><span class="s">&#39;</span>
+<span class="n">ADDR_TYPE_LEN</span>  <span class="o">=</span> <span class="mi">1</span>
+<span class="n">TTL_LEN</span>        <span class="o">=</span> <span class="mi">4</span>
+
+
+<div class="viewcode-block" id="RelayConnectedCell"><a class="viewcode-back" href="../../docs/cell/relay.html#cell.relay.RelayConnectedCell">[docs]</a><span class="k">class</span> <span class="nc">RelayConnectedCell</span><span class="p">(</span><span class="n">RelayCell</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;.. note:: tor-spec, Section 6.2&#39;&#39;&#39;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">header</span><span class="p">,</span> <span class="n">rheader</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">addr_type</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">addr</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                 <span class="n">ttl</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        :param :class:`~oppy.cell.fixedlen.FixedLenCell.Header` header:</span>
+<span class="sd">            fixed-length header to use in this cell</span>
+<span class="sd">        :param :class:`~oppy.cell.relay.RelayCell.RelayHeader` rheader:</span>
+<span class="sd">            relay header to use in this cell</span>
+<span class="sd">        :param str addr_type: type of IP address sent (only set if IPv6)</span>
+<span class="sd">        :param str addr: address a connection has been made to</span>
+<span class="sd">        :param str ttl: number of seconds the address can be cached</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">header</span> <span class="o">=</span> <span class="n">header</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rheader</span> <span class="o">=</span> <span class="n">rheader</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">addr_type</span> <span class="o">=</span> <span class="n">addr_type</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">addr</span> <span class="o">=</span> <span class="n">addr</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ttl</span> <span class="o">=</span> <span class="n">ttl</span>
+
+<div class="viewcode-block" id="RelayConnectedCell.getBytes"><a class="viewcode-back" href="../../docs/cell/relay.html#cell.relay.RelayConnectedCell.getBytes">[docs]</a>    <span class="k">def</span> <span class="nf">getBytes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">trimmed</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Build and return the raw byte string this cell represents.</span>
+
+<span class="sd">        :param bool trimmed: if **True**, do not pad payload bytes</span>
+<span class="sd">        :returns: **str** raw bytes this cell represents</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">ret</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">getBytes</span><span class="p">()</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">rheader</span><span class="o">.</span><span class="n">getBytes</span><span class="p">()</span>
+        <span class="n">ret</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">addr</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">addr_type</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">ttl</span>
+        <span class="k">if</span> <span class="n">trimmed</span> <span class="ow">is</span> <span class="bp">True</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">ret</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">FixedLenCell</span><span class="o">.</span><span class="n">padCellBytes</span><span class="p">(</span><span class="n">ret</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">link_version</span><span class="p">)</span>
+</div>
+    <span class="k">def</span> <span class="nf">_parseRelayPayload</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Parse the string *data* and extract cell fields.</span>
+
+<span class="sd">        :param str data: string to parse</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">start</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">relayPayloadRange</span><span class="p">()</span>
+        <span class="n">offset</span> <span class="o">=</span> <span class="n">start</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">addr</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span><span class="p">:</span><span class="n">offset</span> <span class="o">+</span> <span class="n">DEF</span><span class="o">.</span><span class="n">IPv4_ADDR_LEN</span><span class="p">]</span>
+        <span class="n">offset</span> <span class="o">+=</span> <span class="n">DEF</span><span class="o">.</span><span class="n">IPv4_ADDR_LEN</span>
+
+        <span class="c"># ZERO_ADDR_STR indicates we have an IPv6 address</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">addr</span> <span class="o">==</span> <span class="n">ZERO_ADDR_STR</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">addr_type</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span><span class="p">:</span><span class="n">offset</span> <span class="o">+</span> <span class="n">ADDR_TYPE_LEN</span><span class="p">]</span>
+            <span class="n">offset</span> <span class="o">+=</span> <span class="n">ADDR_TYPE_LEN</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">addr</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span><span class="p">:</span><span class="n">offset</span> <span class="o">+</span> <span class="n">DEF</span><span class="o">.</span><span class="n">IPv6_ADDR_LEN</span><span class="p">]</span>
+            <span class="n">offset</span> <span class="o">+=</span> <span class="n">DEF</span><span class="o">.</span><span class="n">IPv6_ADDR_LEN</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">addr_type</span> <span class="o">=</span> <span class="s">&#39;&#39;</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">ttl</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span><span class="p">:</span><span class="n">offset</span> <span class="o">+</span> <span class="n">TTL_LEN</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">fmt</span> <span class="o">=</span> <span class="s">&#39;{}, rheader={}, addr_type={}, addr={}, ttl={}&#39;</span>
+        <span class="n">fmt</span> <span class="o">=</span> <span class="s">&#39;RelayConnectedCell=({})&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">fmt</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">fmt</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="p">),</span> <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">rheader</span><span class="p">),</span>
+                          <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">addr_type</span><span class="p">),</span> <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">addr</span><span class="p">),</span>
+                          <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ttl</span><span class="p">))</span>
+
+</div>
+<div class="viewcode-block" id="RelayDataCell"><a class="viewcode-back" href="../../docs/cell/relay.html#cell.relay.RelayDataCell">[docs]</a><span class="k">class</span> <span class="nc">RelayDataCell</span><span class="p">(</span><span class="n">RelayCell</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;.. note:: tor-spec, Section 6.2</span>
+
+<span class="sd">    .. note: RelayDataCell&#39;s don&#39;t have any fields beyond the header</span>
+<span class="sd">        and relay header, so the payload is just treated as a blob.</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="RelayDataCell.make"><a class="viewcode-back" href="../../docs/cell/relay.html#cell.relay.RelayDataCell.make">[docs]</a>    <span class="k">def</span> <span class="nf">make</span><span class="p">(</span><span class="n">circ_id</span><span class="p">,</span> <span class="n">stream_id</span><span class="p">,</span> <span class="n">rpayload</span><span class="p">,</span> <span class="n">link_version</span><span class="o">=</span><span class="mi">3</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Construct and return a RelayData cell, using default values</span>
+<span class="sd">        where possible.</span>
+
+<span class="sd">        Create a FixedLenCell.Header and a RelayCell.RelayHeader.</span>
+
+<span class="sd">        :param int circ_id: Circuit ID to use in this cell</span>
+<span class="sd">        :param int stream_id: Stream ID to use in this cell</span>
+<span class="sd">        :param str rpayload: data to use as the relay payload</span>
+<span class="sd">        :param int link_version: Link Protocol version in use</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">rpayload</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">DEF</span><span class="o">.</span><span class="n">MAX_RPAYLOAD_LEN</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">BadPayloadData</span><span class="p">()</span>
+        <span class="n">h</span> <span class="o">=</span> <span class="n">FixedLenCell</span><span class="o">.</span><span class="n">Header</span><span class="p">(</span><span class="n">circ_id</span><span class="o">=</span><span class="n">circ_id</span><span class="p">,</span>
+                                <span class="n">cmd</span><span class="o">=</span><span class="n">DEF</span><span class="o">.</span><span class="n">RELAY_CMD</span><span class="p">,</span>
+                                <span class="n">link_version</span><span class="o">=</span><span class="n">link_version</span><span class="p">)</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">RelayCell</span><span class="o">.</span><span class="n">RelayHeader</span><span class="p">(</span><span class="n">cmd</span><span class="o">=</span><span class="n">DEF</span><span class="o">.</span><span class="n">RELAY_DATA_CMD</span><span class="p">,</span>
+                                  <span class="n">recognized</span><span class="o">=</span><span class="n">DEF</span><span class="o">.</span><span class="n">RECOGNIZED</span><span class="p">,</span>
+                                  <span class="n">stream_id</span><span class="o">=</span><span class="n">stream_id</span><span class="p">,</span>
+                                  <span class="n">digest</span><span class="o">=</span><span class="n">DEF</span><span class="o">.</span><span class="n">EMPTY_DIGEST</span><span class="p">,</span>
+                                  <span class="n">rpayload_len</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">rpayload</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">RelayDataCell</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="n">rheader</span><span class="o">=</span><span class="n">r</span><span class="p">,</span> <span class="n">rpayload</span><span class="o">=</span><span class="n">rpayload</span><span class="p">)</span>
+
+</div></div>
+<div class="viewcode-block" id="RelayDropCell"><a class="viewcode-back" href="../../docs/cell/relay.html#cell.relay.RelayDropCell">[docs]</a><span class="k">class</span> <span class="nc">RelayDropCell</span><span class="p">(</span><span class="n">RelayCell</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;.. note:: tor-spec, Section 6.2</span>
+
+<span class="sd">    .. note: RelayDropCell is a long-range dummy cell and they are immediately</span>
+<span class="sd">        dropped upon receipt.</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="k">pass</span>
+
+</div>
+<span class="n">REASON_SIZE</span> <span class="o">=</span> <span class="mi">1</span>
+
+
+<div class="viewcode-block" id="RelayEndCell"><a class="viewcode-back" href="../../docs/cell/relay.html#cell.relay.RelayEndCell">[docs]</a><span class="k">class</span> <span class="nc">RelayEndCell</span><span class="p">(</span><span class="n">RelayCell</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;.. note:: tor-spec, Section 6.3&#39;&#39;&#39;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">header</span><span class="p">,</span> <span class="n">rheader</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">reason_data</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        :param :class:`~oppy.cell.fixedlen.FixedLenCell.Header` header:</span>
+<span class="sd">            fixed-length header to use in this cell</span>
+<span class="sd">        :param :class:`~oppy.cell.relay.RelayCell.RelayHeader` rheader:</span>
+<span class="sd">            relay header to use in this cell</span>
+<span class="sd">        :param int reason: Single byte that describes the reason this stream</span>
+<span class="sd">            was closed</span>
+<span class="sd">        :param str reason_data: with REASON_EXITPOLICY, this optional field</span>
+<span class="sd">            may be filled in</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">header</span> <span class="o">=</span> <span class="n">header</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rheader</span> <span class="o">=</span> <span class="n">rheader</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">reason</span> <span class="o">=</span> <span class="n">reason</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">reason_data</span> <span class="o">=</span> <span class="n">reason_data</span>
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="RelayEndCell.make"><a class="viewcode-back" href="../../docs/cell/relay.html#cell.relay.RelayEndCell.make">[docs]</a>    <span class="k">def</span> <span class="nf">make</span><span class="p">(</span><span class="n">circ_id</span><span class="p">,</span> <span class="n">stream_id</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="n">DEF</span><span class="o">.</span><span class="n">REASON_DONE</span><span class="p">,</span> <span class="n">reason_data</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">,</span>
+             <span class="n">link_version</span><span class="o">=</span><span class="mi">3</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Construct and return a RelayEnd cell, using default values where</span>
+<span class="sd">        possible.</span>
+
+<span class="sd">        Create a FixedLenCell.Header and a RelayCell.RelayHeader.</span>
+
+<span class="sd">        :param int circ_id: Circuit ID to use in this cell</span>
+<span class="sd">        :param int stream_id: Stream ID to use in this cell</span>
+<span class="sd">        :param int reason: Single byte that describes the reason this stream</span>
+<span class="sd">            was closed</span>
+<span class="sd">        :param str reason_data: with REASON_EXITPOLICY, this optional field</span>
+<span class="sd">            may be filled in</span>
+<span class="sd">        :returns: :class:`~oppy.cell.relay.RelayEndCell`</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">h</span> <span class="o">=</span> <span class="n">FixedLenCell</span><span class="o">.</span><span class="n">Header</span><span class="p">(</span><span class="n">circ_id</span><span class="o">=</span><span class="n">circ_id</span><span class="p">,</span>
+                                <span class="n">cmd</span><span class="o">=</span><span class="n">DEF</span><span class="o">.</span><span class="n">RELAY_CMD</span><span class="p">,</span>
+                                <span class="n">link_version</span><span class="o">=</span><span class="n">link_version</span><span class="p">)</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">RelayCell</span><span class="o">.</span><span class="n">RelayHeader</span><span class="p">(</span><span class="n">cmd</span><span class="o">=</span><span class="n">DEF</span><span class="o">.</span><span class="n">RELAY_END_CMD</span><span class="p">,</span>
+                                  <span class="n">recognized</span><span class="o">=</span><span class="n">DEF</span><span class="o">.</span><span class="n">RECOGNIZED</span><span class="p">,</span>
+                                  <span class="n">stream_id</span><span class="o">=</span><span class="n">stream_id</span><span class="p">,</span>
+                                  <span class="n">digest</span><span class="o">=</span><span class="n">DEF</span><span class="o">.</span><span class="n">EMPTY_DIGEST</span><span class="p">,</span>
+                                  <span class="n">rpayload_len</span><span class="o">=</span><span class="n">REASON_SIZE</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">reason_data</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">RelayEndCell</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="n">rheader</span><span class="o">=</span><span class="n">r</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="n">reason</span><span class="p">,</span>
+                            <span class="n">reason_data</span><span class="o">=</span><span class="n">reason_data</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="RelayEndCell.getBytes"><a class="viewcode-back" href="../../docs/cell/relay.html#cell.relay.RelayEndCell.getBytes">[docs]</a>    <span class="k">def</span> <span class="nf">getBytes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">trimmed</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Build and return the raw byte string this cell represents.</span>
+
+<span class="sd">        :param bool trimmed: if **True**, do not pad payload bytes</span>
+<span class="sd">        :returns: **str** raw byte string this cell represents</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">ret</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">getBytes</span><span class="p">()</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">rheader</span><span class="o">.</span><span class="n">getBytes</span><span class="p">()</span>
+        <span class="n">ret</span> <span class="o">+=</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;!B&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">reason</span><span class="p">)</span>
+        <span class="n">ret</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">reason_data</span>
+        <span class="k">if</span> <span class="n">trimmed</span> <span class="ow">is</span> <span class="bp">True</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">ret</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">FixedLenCell</span><span class="o">.</span><span class="n">padCellBytes</span><span class="p">(</span><span class="n">ret</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">link_version</span><span class="p">)</span>
+</div>
+    <span class="k">def</span> <span class="nf">_parseRelayPayload</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Parse the string *data* and extract RelayEndCell payload values.</span>
+
+<span class="sd">        Fill in this cell&#39;s fields with values.</span>
+
+<span class="sd">        :param str data: data string to parse</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">start</span><span class="p">,</span> <span class="n">end</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">relayPayloadRange</span><span class="p">()</span>
+        <span class="n">offset</span> <span class="o">=</span> <span class="n">start</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">reason</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">unpack</span><span class="p">(</span><span class="s">&#39;!B&#39;</span><span class="p">,</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span><span class="p">:</span><span class="n">offset</span> <span class="o">+</span> <span class="n">REASON_SIZE</span><span class="p">])[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">offset</span> <span class="o">+=</span> <span class="n">REASON_SIZE</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">reason</span> <span class="o">==</span> <span class="n">DEF</span><span class="o">.</span><span class="n">REASON_EXITPOLICY</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">reason_data</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span><span class="p">:</span><span class="n">end</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">reason_data</span> <span class="o">=</span> <span class="s">&#39;&#39;</span>
+
+    <span class="k">def</span> <span class="nf">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">fmt</span> <span class="o">=</span> <span class="s">&#39;{}, rheader={}, reason={}, reason_data={}&#39;</span>
+        <span class="n">fmt</span> <span class="o">=</span> <span class="s">&#39;RelayBeginCell({})&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">fmt</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">fmt</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="p">),</span> <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">rheader</span><span class="p">),</span>
+                          <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">reason</span><span class="p">),</span> <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">reason_data</span><span class="p">))</span>
+
+</div>
+<span class="n">NSPEC_LEN</span>   <span class="o">=</span> <span class="mi">1</span>
+<span class="n">LSTYPE_LEN</span>  <span class="o">=</span> <span class="mi">1</span>
+<span class="n">LSLEN_LEN</span>   <span class="o">=</span> <span class="mi">1</span>
+<span class="n">HTYPE_LEN</span>   <span class="o">=</span> <span class="mi">2</span>
+<span class="n">HLEN_LEN</span>    <span class="o">=</span> <span class="mi">2</span>
+
+
+<div class="viewcode-block" id="RelayExtend2Cell"><a class="viewcode-back" href="../../docs/cell/relay.html#cell.relay.RelayExtend2Cell">[docs]</a><span class="k">class</span> <span class="nc">RelayExtend2Cell</span><span class="p">(</span><span class="n">RelayCell</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;.. note:: tor-spec, Section 5.1.2&#39;&#39;&#39;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">header</span><span class="p">,</span> <span class="n">rheader</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">nspec</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">lspecs</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                 <span class="n">htype</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">hlen</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">hdata</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        :param :class:`~oppy.cell.fixedlen.FixedLenCell.Header` header:</span>
+<span class="sd">            fixed-length header to use in this cell</span>
+<span class="sd">        :param :class:`~oppy.cell.relay.RelayCell.RelayHeader` rheader:</span>
+<span class="sd">            relay header to use in this cell</span>
+<span class="sd">        :param int nspec: the number of Link Specifiers in this cell</span>
+<span class="sd">        :param list, :class:`~oppy.cell.util.LinkSpecifier` lspecs: list of</span>
+<span class="sd">            Link Specifiers to include in this cell</span>
+<span class="sd">        :param int htype: Type of handshake in use</span>
+<span class="sd">        :param int hlen: length of the handshake data field</span>
+<span class="sd">        :param str hdata: handshake data (*onion skin*)</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">header</span> <span class="o">=</span> <span class="n">header</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rheader</span> <span class="o">=</span> <span class="n">rheader</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">nspec</span> <span class="o">=</span> <span class="n">nspec</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lspecs</span> <span class="o">=</span> <span class="n">lspecs</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">htype</span> <span class="o">=</span> <span class="n">htype</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">hlen</span> <span class="o">=</span> <span class="n">hlen</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">hdata</span> <span class="o">=</span> <span class="n">hdata</span>
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="RelayExtend2Cell.make"><a class="viewcode-back" href="../../docs/cell/relay.html#cell.relay.RelayExtend2Cell.make">[docs]</a>    <span class="k">def</span> <span class="nf">make</span><span class="p">(</span><span class="n">circ_id</span><span class="p">,</span> <span class="n">stream_id</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">nspec</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">lspecs</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+             <span class="n">htype</span><span class="o">=</span><span class="n">DEF</span><span class="o">.</span><span class="n">NTOR_HTYPE</span><span class="p">,</span> <span class="n">hlen</span><span class="o">=</span><span class="n">DEF</span><span class="o">.</span><span class="n">NTOR_HLEN</span><span class="p">,</span> <span class="n">hdata</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">,</span>
+             <span class="n">link_version</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">early</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Construct and return a RelayExtend2Cell, using default values where</span>
+<span class="sd">        possible.</span>
+
+<span class="sd">        Create a FixedLenCell.Header and a RelayCell.RelayHeader for use</span>
+<span class="sd">        in this cell.</span>
+
+<span class="sd">        .. note:: oppy currently only supports the NTor handshake and will</span>
+<span class="sd">            reject unrecognized htype&#39;s and hlen&#39;s.</span>
+
+<span class="sd">        :param int circ_id: Circuit ID to use in this cell</span>
+<span class="sd">        :param int stream_id: Stream ID to use in this cell (should be zero)</span>
+<span class="sd">        :param int nspec: the number of Link Specifiers in this cell</span>
+<span class="sd">        :param list, oppy.cell.util.LinkSpecifier lspecs: list of</span>
+<span class="sd">            Link Specifiers to include in this cell</span>
+<span class="sd">        :param int htype: Type of handshake in use</span>
+<span class="sd">        :param int hlen: length of the handshake data field</span>
+<span class="sd">        :param str hdata: handshake data (*onion skin*)</span>
+<span class="sd">        :param int link_version: Link Protocol version in use</span>
+<span class="sd">        :param bool early: if **True**, use a RELAY_EARLY cmd instead of</span>
+<span class="sd">            RELAY cmd</span>
+<span class="sd">        :returns: :class:`~oppy.cell.relay.RelayExtend2Cell`</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">if</span> <span class="n">lspecs</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">lspecs</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">if</span> <span class="n">stream_id</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;EXTEND2 cells should use stream_id=0.&quot;</span>
+            <span class="k">raise</span> <span class="n">BadPayloadData</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">htype</span> <span class="o">!=</span> <span class="n">DEF</span><span class="o">.</span><span class="n">NTOR_HTYPE</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&#39;htype was {}, but we currently only support &#39;</span>
+            <span class="n">msg</span> <span class="o">+=</span> <span class="s">&#39;{} (NTor) handshakes.&#39;</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">htype</span><span class="p">,</span> <span class="n">DEF</span><span class="o">.</span><span class="n">NTOR_HTYPE</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="n">BadPayloadData</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">hlen</span> <span class="o">!=</span> <span class="n">DEF</span><span class="o">.</span><span class="n">NTOR_HLEN</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&#39;htype was NTor and hlen was {} but expecting {}&#39;</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">hlen</span><span class="p">,</span> <span class="n">DEF</span><span class="o">.</span><span class="n">NTOR_HLEN</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="n">BadPayloadData</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">hlen</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">hdata</span><span class="p">):</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&#39;hlen {} neq len(hdata) {}&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">hlen</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">hdata</span><span class="p">))</span>
+            <span class="k">raise</span> <span class="n">BadPayloadData</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+        <span class="n">cmd</span> <span class="o">=</span> <span class="n">DEF</span><span class="o">.</span><span class="n">RELAY_EARLY_CMD</span> <span class="k">if</span> <span class="n">early</span> <span class="ow">is</span> <span class="bp">True</span> <span class="k">else</span> <span class="n">DEF</span><span class="o">.</span><span class="n">RELAY_CMD</span>
+
+        <span class="n">h</span> <span class="o">=</span> <span class="n">FixedLenCell</span><span class="o">.</span><span class="n">Header</span><span class="p">(</span><span class="n">circ_id</span><span class="o">=</span><span class="n">circ_id</span><span class="p">,</span>
+                                <span class="n">cmd</span><span class="o">=</span><span class="n">cmd</span><span class="p">,</span>
+                                <span class="n">link_version</span><span class="o">=</span><span class="n">link_version</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">nspec</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">nspec</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">lspecs</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">lspecs</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&#39;No Link Specifiers found. At least 1 Link Specifier &#39;</span>
+            <span class="n">msg</span> <span class="o">+=</span> <span class="s">&#39;is required.&#39;</span>
+            <span class="k">raise</span> <span class="n">BadPayloadData</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">nspec</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">lspecs</span><span class="p">):</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&#39;Expected {} LinkSpecifiers but found {}&#39;</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">nspec</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">lspecs</span><span class="p">))</span>
+            <span class="k">raise</span> <span class="n">BadPayloadData</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+        <span class="n">rpayload_len</span> <span class="o">=</span> <span class="n">NSPEC_LEN</span>
+        <span class="k">for</span> <span class="n">lspec</span> <span class="ow">in</span> <span class="n">lspecs</span><span class="p">:</span>
+            <span class="n">rpayload_len</span> <span class="o">+=</span> <span class="nb">len</span><span class="p">(</span><span class="n">lspec</span><span class="p">)</span>
+        <span class="n">rpayload_len</span> <span class="o">+=</span> <span class="n">HTYPE_LEN</span> <span class="o">+</span> <span class="n">HLEN_LEN</span> <span class="o">+</span> <span class="n">hlen</span>
+
+        <span class="n">r</span> <span class="o">=</span> <span class="n">RelayCell</span><span class="o">.</span><span class="n">RelayHeader</span><span class="p">(</span><span class="n">cmd</span><span class="o">=</span><span class="n">DEF</span><span class="o">.</span><span class="n">RELAY_EXTEND2_CMD</span><span class="p">,</span>
+                                  <span class="n">recognized</span><span class="o">=</span><span class="n">DEF</span><span class="o">.</span><span class="n">RECOGNIZED</span><span class="p">,</span>
+                                  <span class="n">stream_id</span><span class="o">=</span><span class="n">stream_id</span><span class="p">,</span>
+                                  <span class="n">digest</span><span class="o">=</span><span class="n">DEF</span><span class="o">.</span><span class="n">EMPTY_DIGEST</span><span class="p">,</span>
+                                  <span class="n">rpayload_len</span><span class="o">=</span><span class="n">rpayload_len</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">RelayExtend2Cell</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="n">rheader</span><span class="o">=</span><span class="n">r</span><span class="p">,</span> <span class="n">nspec</span><span class="o">=</span><span class="n">nspec</span><span class="p">,</span> <span class="n">lspecs</span><span class="o">=</span><span class="n">lspecs</span><span class="p">,</span>
+                                <span class="n">htype</span><span class="o">=</span><span class="n">htype</span><span class="p">,</span> <span class="n">hlen</span><span class="o">=</span><span class="n">hlen</span><span class="p">,</span> <span class="n">hdata</span><span class="o">=</span><span class="n">hdata</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="RelayExtend2Cell.getBytes"><a class="viewcode-back" href="../../docs/cell/relay.html#cell.relay.RelayExtend2Cell.getBytes">[docs]</a>    <span class="k">def</span> <span class="nf">getBytes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">trimmed</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Build and return the raw byte string this cell represents.</span>
+
+<span class="sd">        :param bool trimmed: if **True**, do not pad payload bytes</span>
+<span class="sd">        :returns: **str** raw byte string this cell represents</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">ret</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">getBytes</span><span class="p">()</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">rheader</span><span class="o">.</span><span class="n">getBytes</span><span class="p">()</span>
+        <span class="n">ret</span> <span class="o">+=</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;!B&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">nspec</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">lspec</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">lspecs</span><span class="p">:</span>
+            <span class="n">ret</span> <span class="o">+=</span> <span class="n">lspec</span><span class="o">.</span><span class="n">getBytes</span><span class="p">()</span>
+
+        <span class="n">ret</span> <span class="o">+=</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;!H&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">htype</span><span class="p">)</span>
+        <span class="n">ret</span> <span class="o">+=</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;!H&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">hlen</span><span class="p">)</span>
+        <span class="n">ret</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hdata</span>
+        <span class="k">if</span> <span class="n">trimmed</span> <span class="ow">is</span> <span class="bp">True</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">ret</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">FixedLenCell</span><span class="o">.</span><span class="n">padCellBytes</span><span class="p">(</span><span class="n">ret</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">link_version</span><span class="p">)</span>
+</div>
+    <span class="k">def</span> <span class="nf">_parseRelayPayload</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Parse the string *data* and extract Extend2 fields.</span>
+
+<span class="sd">        Fill in this cell&#39;s values.</span>
+
+<span class="sd">        :param str data: data string to parse</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">start</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">relayPayloadRange</span><span class="p">()</span>
+        <span class="n">offset</span> <span class="o">=</span> <span class="n">start</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">nspec</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">unpack</span><span class="p">(</span><span class="s">&#39;!B&#39;</span><span class="p">,</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span><span class="p">:</span><span class="n">offset</span> <span class="o">+</span> <span class="n">NSPEC_LEN</span><span class="p">])[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">offset</span> <span class="o">+=</span> <span class="n">NSPEC_LEN</span>
+
+        <span class="c"># Find the start and end of the lspecs slice.</span>
+        <span class="n">lspecs_start</span> <span class="o">=</span> <span class="n">offset</span>
+        <span class="k">for</span> <span class="n">idx</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">nspec</span><span class="p">):</span>
+            <span class="n">offset</span> <span class="o">+=</span> <span class="n">LSTYPE_LEN</span>  <span class="c"># skipped lstype</span>
+            <span class="n">lslen</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">unpack</span><span class="p">(</span><span class="s">&#39;!B&#39;</span><span class="p">,</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span><span class="p">:</span><span class="n">offset</span> <span class="o">+</span> <span class="n">LSLEN_LEN</span><span class="p">])[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="n">offset</span> <span class="o">+=</span> <span class="n">LSLEN_LEN</span>  <span class="c"># consumed lslen</span>
+            <span class="n">offset</span> <span class="o">+=</span> <span class="n">lslen</span>  <span class="c"># skipped lspec</span>
+        <span class="n">lspecs_end</span> <span class="o">=</span> <span class="n">offset</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lspecs</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">lspecs_start</span><span class="p">:</span><span class="n">lspecs_end</span><span class="p">]</span>
+
+        <span class="c"># Parse each of the handshake fields.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">htype</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">unpack</span><span class="p">(</span><span class="s">&#39;!H&#39;</span><span class="p">,</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span><span class="p">:</span><span class="n">offset</span> <span class="o">+</span> <span class="n">HTYPE_LEN</span><span class="p">])[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">offset</span> <span class="o">+=</span> <span class="n">HTYPE_LEN</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">hlen</span>  <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">unpack</span><span class="p">(</span><span class="s">&#39;!H&#39;</span><span class="p">,</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span><span class="p">:</span><span class="n">offset</span> <span class="o">+</span> <span class="n">HLEN_LEN</span><span class="p">])[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">offset</span> <span class="o">+=</span> <span class="n">HLEN_LEN</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">hdata</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span><span class="p">:</span><span class="n">offset</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">hlen</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">fmt</span> <span class="o">=</span> <span class="s">&#39;{}, rheader={}, nspec={}, lspecs={}, htype={}, hlen={}, &#39;</span>
+        <span class="n">fmt</span> <span class="o">+=</span> <span class="s">&#39;hdata={}&#39;</span>
+        <span class="n">fmt</span> <span class="o">=</span> <span class="s">&#39;RelayExtend2Cell({})&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">fmt</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">fmt</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="p">),</span> <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">rheader</span><span class="p">),</span>
+                          <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">nspec</span><span class="p">),</span> <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">lspecs</span><span class="p">),</span>
+                          <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">htype</span><span class="p">),</span> <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hlen</span><span class="p">),</span>
+                          <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hdata</span><span class="p">))</span>
+
+</div>
+<div class="viewcode-block" id="RelayExtended2Cell"><a class="viewcode-back" href="../../docs/cell/relay.html#cell.relay.RelayExtended2Cell">[docs]</a><span class="k">class</span> <span class="nc">RelayExtended2Cell</span><span class="p">(</span><span class="n">RelayCell</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;.. note:: tor-spec, Section 5.1, 5.1.2&#39;&#39;&#39;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">header</span><span class="p">,</span> <span class="n">rheader</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">hlen</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">hdata</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        :param :class:`~oppy.cell.fixedlen.FixedLenCell.Header` header:</span>
+<span class="sd">            header to use in this cell</span>
+<span class="sd">        :param :class:`~oppy.cell.relay.RelayCell.RelayHeader` rheader:</span>
+<span class="sd">            relay header to use in this cell</span>
+<span class="sd">        :param int hlen: length of the handshake data field</span>
+<span class="sd">        :param str hdata: handshake data (onion skin)</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">header</span> <span class="o">=</span> <span class="n">header</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rheader</span> <span class="o">=</span> <span class="n">rheader</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">hlen</span> <span class="o">=</span> <span class="n">hlen</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">hdata</span> <span class="o">=</span> <span class="n">hdata</span>
+
+<div class="viewcode-block" id="RelayExtended2Cell.getBytes"><a class="viewcode-back" href="../../docs/cell/relay.html#cell.relay.RelayExtended2Cell.getBytes">[docs]</a>    <span class="k">def</span> <span class="nf">getBytes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">trimmed</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Build and return the raw byte string this cell represents.</span>
+
+<span class="sd">        :param bool trimmed: if **True**, do not pad payload bytes</span>
+<span class="sd">        :returns: **str** raw byte string this cell represents</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">ret</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">getBytes</span><span class="p">()</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">rheader</span><span class="o">.</span><span class="n">getBytes</span><span class="p">()</span>
+        <span class="n">ret</span> <span class="o">+=</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;!H&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">hlen</span><span class="p">)</span>
+        <span class="n">ret</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hdata</span>
+        <span class="k">if</span> <span class="n">trimmed</span> <span class="ow">is</span> <span class="bp">True</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">ret</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">FixedLenCell</span><span class="o">.</span><span class="n">padCellBytes</span><span class="p">(</span><span class="n">ret</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">link_version</span><span class="p">)</span>
+</div>
+    <span class="k">def</span> <span class="nf">_parseRelayPayload</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Parse the string *data* and extract Extended2 fields.</span>
+
+<span class="sd">        Fill in this cell&#39;s attributes.</span>
+
+<span class="sd">        :param str data: data string to parse</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">start</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">relayPayloadRange</span><span class="p">()</span>
+        <span class="n">offset</span> <span class="o">=</span> <span class="n">start</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">hlen</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">unpack</span><span class="p">(</span><span class="s">&#39;!H&#39;</span><span class="p">,</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span><span class="p">:</span><span class="n">offset</span> <span class="o">+</span> <span class="n">HLEN_LEN</span><span class="p">])[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">offset</span> <span class="o">+=</span> <span class="n">HLEN_LEN</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">hdata</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span><span class="p">:</span><span class="n">offset</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">hlen</span><span class="p">]</span>
+        <span class="k">except</span> <span class="ne">IndexError</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">BadPayloadData</span><span class="p">(</span><span class="s">&#39;Not enough hdata bytes.&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">fmt</span> <span class="o">=</span> <span class="s">&#39;RelayExtended2Cell({}, rheader={}, hlen={}, hdata={})&#39;</span>
+        <span class="k">return</span> <span class="n">fmt</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="p">),</span> <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">rheader</span><span class="p">),</span>
+                          <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hlen</span><span class="p">),</span> <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hdata</span><span class="p">))</span>
+
+</div>
+<div class="viewcode-block" id="RelayExtendedCell"><a class="viewcode-back" href="../../docs/cell/relay.html#cell.relay.RelayExtendedCell">[docs]</a><span class="k">class</span> <span class="nc">RelayExtendedCell</span><span class="p">(</span><span class="n">RelayCell</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;.. note:: Not Implemented&#39;&#39;&#39;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">header</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s">&quot;Can&#39;t make RelayExtendedCell yet.&quot;</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="RelayExtendCell"><a class="viewcode-back" href="../../docs/cell/relay.html#cell.relay.RelayExtendCell">[docs]</a><span class="k">class</span> <span class="nc">RelayExtendCell</span><span class="p">(</span><span class="n">RelayCell</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;.. note:: Not Implemented&#39;&#39;&#39;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">header</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s">&quot;Can&#39;t make RelayExtendCell yet.&quot;</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="RelayResolvedCell"><a class="viewcode-back" href="../../docs/cell/relay.html#cell.relay.RelayResolvedCell">[docs]</a><span class="k">class</span> <span class="nc">RelayResolvedCell</span><span class="p">(</span><span class="n">RelayCell</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;.. note:: Not Implemented&#39;&#39;&#39;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">header</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s">&quot;Can&#39;t make RelayResolvedCell yet.&quot;</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="RelayResolveCell"><a class="viewcode-back" href="../../docs/cell/relay.html#cell.relay.RelayResolveCell">[docs]</a><span class="k">class</span> <span class="nc">RelayResolveCell</span><span class="p">(</span><span class="n">RelayCell</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;.. note:: Not Implemented&#39;&#39;&#39;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">header</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s">&quot;Can&#39;t make RelayResolveCell yet.&quot;</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="RelaySendMeCell"><a class="viewcode-back" href="../../docs/cell/relay.html#cell.relay.RelaySendMeCell">[docs]</a><span class="k">class</span> <span class="nc">RelaySendMeCell</span><span class="p">(</span><span class="n">RelayCell</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;.. note:: tor-spec, Section 7.3, 7.4</span>
+
+<span class="sd">    .. note: There are no fields in a SendMe cell&#39;s payload, so</span>
+<span class="sd">        we just use parent class fields and methods.</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+
+    <span class="c"># convenience function to simplify construction</span>
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="RelaySendMeCell.make"><a class="viewcode-back" href="../../docs/cell/relay.html#cell.relay.RelaySendMeCell.make">[docs]</a>    <span class="k">def</span> <span class="nf">make</span><span class="p">(</span><span class="n">circ_id</span><span class="p">,</span> <span class="n">stream_id</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">link_version</span><span class="o">=</span><span class="mi">3</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Construct and return a RelaySendMeCell, using default values</span>
+<span class="sd">        where possible.</span>
+
+<span class="sd">        Create a FixedLenCell.Header and a RelayCell.RelayHeader for use</span>
+<span class="sd">        in this cell.</span>
+
+<span class="sd">        :param int circ_id: Circuit ID to use in this cell</span>
+<span class="sd">        :param int stream_id: Stream ID to use in this cell. A Stream ID of</span>
+<span class="sd">            zero indicates a &#39;circuit-level&#39; SendMe cell, and a non-zero</span>
+<span class="sd">            Stream ID indicates a &#39;stream-level&#39; SendMe cell.</span>
+<span class="sd">        :param int link_version: Link Protocol version in use</span>
+<span class="sd">        :returns: :class:`~oppy.cell.relay.RelaySendMeCell`</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">h</span> <span class="o">=</span> <span class="n">FixedLenCell</span><span class="o">.</span><span class="n">Header</span><span class="p">(</span><span class="n">circ_id</span><span class="o">=</span><span class="n">circ_id</span><span class="p">,</span>
+                                <span class="n">cmd</span><span class="o">=</span><span class="n">DEF</span><span class="o">.</span><span class="n">RELAY_CMD</span><span class="p">,</span>
+                                <span class="n">link_version</span><span class="o">=</span><span class="n">link_version</span><span class="p">)</span>
+        <span class="n">r</span> <span class="o">=</span> <span class="n">RelayCell</span><span class="o">.</span><span class="n">RelayHeader</span><span class="p">(</span><span class="n">cmd</span><span class="o">=</span><span class="n">DEF</span><span class="o">.</span><span class="n">RELAY_SENDME_CMD</span><span class="p">,</span>
+                                  <span class="n">recognized</span><span class="o">=</span><span class="n">DEF</span><span class="o">.</span><span class="n">RECOGNIZED</span><span class="p">,</span>
+                                  <span class="n">stream_id</span><span class="o">=</span><span class="n">stream_id</span><span class="p">,</span>
+                                  <span class="n">digest</span><span class="o">=</span><span class="n">DEF</span><span class="o">.</span><span class="n">EMPTY_DIGEST</span><span class="p">,</span>
+                                  <span class="n">rpayload_len</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">RelaySendMeCell</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="n">r</span><span class="p">)</span>
+
+</div></div>
+<div class="viewcode-block" id="RelayTruncatedCell"><a class="viewcode-back" href="../../docs/cell/relay.html#cell.relay.RelayTruncatedCell">[docs]</a><span class="k">class</span> <span class="nc">RelayTruncatedCell</span><span class="p">(</span><span class="n">RelayCell</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;.. note:: tor-spec, Section 5.4&#39;&#39;&#39;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">header</span><span class="p">,</span> <span class="n">rheader</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        :param :class:`~oppy.cell.fixedlen.FixedLenCell.Header` header:</span>
+<span class="sd">            header to use in this cell</span>
+<span class="sd">        :param :class:`~oppy.cell.relay.RelayCell.RelayHeader` rheader:</span>
+<span class="sd">            relay header to use in this cell</span>
+<span class="sd">        :param int reason: A single byte describing the reason this</span>
+<span class="sd">            RelayTruncatedCell was sent.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">header</span> <span class="o">=</span> <span class="n">header</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rheader</span> <span class="o">=</span> <span class="n">rheader</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">reason</span> <span class="o">=</span> <span class="n">reason</span>
+
+<div class="viewcode-block" id="RelayTruncatedCell.getBytes"><a class="viewcode-back" href="../../docs/cell/relay.html#cell.relay.RelayTruncatedCell.getBytes">[docs]</a>    <span class="k">def</span> <span class="nf">getBytes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">trimmed</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Build and return the raw byte string this cell represents.</span>
+
+<span class="sd">        :param bool trimmed: if **True**, do not pad payload bytes</span>
+<span class="sd">        :returns: **str** raw bytes this cell represents</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">ret</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">getBytes</span><span class="p">()</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">rheader</span><span class="o">.</span><span class="n">getBytes</span><span class="p">()</span>
+        <span class="n">ret</span> <span class="o">+=</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;!B&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">reason</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">trimmed</span> <span class="ow">is</span> <span class="bp">True</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">ret</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">FixedLenCell</span><span class="o">.</span><span class="n">padCellBytes</span><span class="p">(</span><span class="n">ret</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">link_version</span><span class="p">)</span>
+</div>
+    <span class="k">def</span> <span class="nf">_parseRelayPayload</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Parse the string *data* and extract RelayTruncatedCell fields.</span>
+
+<span class="sd">        Fill in this cell&#39;s attributes.</span>
+
+<span class="sd">        :param str data: data string to parse</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">start</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">relayPayloadRange</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">reason</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">unpack</span><span class="p">(</span><span class="s">&#39;!B&#39;</span><span class="p">,</span> <span class="n">data</span><span class="p">[</span><span class="n">start</span><span class="p">:</span><span class="n">start</span> <span class="o">+</span> <span class="n">REASON_SIZE</span><span class="p">])[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">fmt</span> <span class="o">=</span> <span class="s">&#39;RelayTruncatedCell=({}, rheader={}, reason={})&#39;</span>
+        <span class="k">return</span> <span class="n">fmt</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="p">),</span> <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">rheader</span><span class="p">),</span>
+                          <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">reason</span><span class="p">))</span>
+
+</div>
+<div class="viewcode-block" id="RelayTruncateCell"><a class="viewcode-back" href="../../docs/cell/relay.html#cell.relay.RelayTruncateCell">[docs]</a><span class="k">class</span> <span class="nc">RelayTruncateCell</span><span class="p">(</span><span class="n">RelayCell</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;.. note:: Not Implemented&#39;&#39;&#39;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">header</span><span class="p">,</span> <span class="n">rheader</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s">&quot;Can&#39;t make RelayTruncateCell yet.&quot;</span><span class="p">)</span></div>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

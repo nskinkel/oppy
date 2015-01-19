@@ -1,7 +1,0 @@
-pynacl >= 0.3.0
-twisted >= 14.0
-stem
-ipaddress
-hkdf
-pycrypto
-pyopenssl

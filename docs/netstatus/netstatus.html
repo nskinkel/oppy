@@ -1,0 +1,170 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>netstatus &mdash; oppy 0.1 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <link rel="top" title="oppy 0.1 documentation" href="../../index.html" />
+    <link rel="up" title="netstatus" href="../netstatus.html" />
+    <link rel="next" title="exceptions" href="exceptions.html" />
+    <link rel="prev" title="netstatus" href="../netstatus.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="exceptions.html" title="exceptions"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="../netstatus.html" title="netstatus"
+             accesskey="P">previous</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../../docs.html" >Documentation</a> &raquo;</li>
+          <li><a href="../netstatus.html" accesskey="U">netstatus</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="module-netstatus.netstatus">
+<span id="netstatus"></span><h1>netstatus<a class="headerlink" href="#module-netstatus.netstatus" title="Permalink to this headline">¶</a></h1>
+<div class="topic">
+<p class="topic-title first">Details</p>
+<p>NetStatus handles downloading network status documents and serving requests
+for server descriptors (needed for building paths and circuits). When
+instantiated, NetStatus immediately tries to download the most
+recent copies of the network consensus and the set of current server
+descriptors. NetStatus also takes care of automatically updating local
+copies of network status documents.</p>
+<p>NetStatus:</p>
+<blockquote>
+<div><ul class="simple">
+<li>Uses V2Dir directory caches when possible, only falling back to
+directory authorities if we don&#8217;t know about any caches.</li>
+<li>Tries to use a cached copy of the consensus from the filesystem
+to initially figure out the V2Dir caches.</li>
+<li>Writes a copy of the consensus to the filesystem for later use.</li>
+<li>Uses stem to represent the consensus, consensus entries, and
+server descriptors.</li>
+<li>Does the actual document parsing in separate worker threads.</li>
+<li>Schedules the next document download</li>
+<li>Handles incoming requests for server descriptors by returning
+a deferred that fires when NetStatus has a good set of server
+descriptors</li>
+</ul>
+</div></blockquote>
+</div>
+<dl class="class">
+<dt id="netstatus.netstatus.NetStatus">
+<em class="property">class </em><tt class="descclassname">netstatus.netstatus.</tt><tt class="descname">NetStatus</tt><a class="reference internal" href="../../_modules/netstatus/netstatus.html#NetStatus"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#netstatus.netstatus.NetStatus" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <tt class="xref py py-class docutils literal"><span class="pre">object</span></tt></p>
+<p>Download consensus and server descriptor documents.</p>
+<dl class="method">
+<dt id="netstatus.netstatus.NetStatus.getDescriptors">
+<tt class="descname">getDescriptors</tt><big>(</big><big>)</big><a class="reference internal" href="../../_modules/netstatus/netstatus.html#NetStatus.getDescriptors"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#netstatus.netstatus.NetStatus.getDescriptors" title="Permalink to this definition">¶</a></dt>
+<dd><p>Return a deferred which will callback with a dict mapping
+fingerprint-&gt;RelayDescriptor when we get a set of good descriptors.</p>
+<p>Called back immediately if we already have server descriptors.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Returns:</th><td class="field-body"><strong>twisted.internet.defer.Deferred</strong> that fires with a dict
+that maps fingerprints-&gt;RelayDescriptors</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="../netstatus.html"
+                        title="previous chapter">netstatus</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="exceptions.html"
+                        title="next chapter">exceptions</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="../../_sources/docs/netstatus/netstatus.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="exceptions.html" title="exceptions"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="../netstatus.html" title="netstatus"
+             >previous</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../../docs.html" >Documentation</a> &raquo;</li>
+          <li><a href="../netstatus.html" >netstatus</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

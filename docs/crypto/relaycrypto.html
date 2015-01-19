@@ -1,0 +1,157 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>relaycrypto &mdash; oppy 0.1 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <link rel="top" title="oppy 0.1 documentation" href="../../index.html" />
+    <link rel="up" title="crypto" href="../crypto.html" />
+    <link rel="next" title="util" href="util.html" />
+    <link rel="prev" title="ntorhandshake" href="ntorhandshake.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="util.html" title="util"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="ntorhandshake.html" title="ntorhandshake"
+             accesskey="P">previous</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../../docs.html" >Documentation</a> &raquo;</li>
+          <li><a href="../crypto.html" accesskey="U">crypto</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="module-crypto.relaycrypto">
+<span id="relaycrypto"></span><h1>relaycrypto<a class="headerlink" href="#module-crypto.relaycrypto" title="Permalink to this headline">¶</a></h1>
+<div class="topic">
+<p class="topic-title first">Details</p>
+<p>RelayCrypto objects make up a circuit&#8217;s <em>crypt_path</em>. They are just thin
+wrappers around AES128-CTR ciphers and running SHA-1 digests, and provide
+circuit&#8217;s with forward/backward ciphers and digests.</p>
+</div>
+<dl class="class">
+<dt id="crypto.relaycrypto.RelayCrypto">
+<em class="property">class </em><tt class="descclassname">crypto.relaycrypto.</tt><tt class="descname">RelayCrypto</tt><a class="headerlink" href="#crypto.relaycrypto.RelayCrypto" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <tt class="xref py py-class docutils literal"><span class="pre">tuple</span></tt></p>
+<p>RelayCrypto(forward_digest, backward_digest, forward_cipher, backward_cipher)</p>
+<dl class="attribute">
+<dt id="crypto.relaycrypto.RelayCrypto.backward_cipher">
+<tt class="descname">backward_cipher</tt><a class="headerlink" href="#crypto.relaycrypto.RelayCrypto.backward_cipher" title="Permalink to this definition">¶</a></dt>
+<dd><p>Alias for field number 3</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="crypto.relaycrypto.RelayCrypto.backward_digest">
+<tt class="descname">backward_digest</tt><a class="headerlink" href="#crypto.relaycrypto.RelayCrypto.backward_digest" title="Permalink to this definition">¶</a></dt>
+<dd><p>Alias for field number 1</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="crypto.relaycrypto.RelayCrypto.forward_cipher">
+<tt class="descname">forward_cipher</tt><a class="headerlink" href="#crypto.relaycrypto.RelayCrypto.forward_cipher" title="Permalink to this definition">¶</a></dt>
+<dd><p>Alias for field number 2</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="crypto.relaycrypto.RelayCrypto.forward_digest">
+<tt class="descname">forward_digest</tt><a class="headerlink" href="#crypto.relaycrypto.RelayCrypto.forward_digest" title="Permalink to this definition">¶</a></dt>
+<dd><p>Alias for field number 0</p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="ntorhandshake.html"
+                        title="previous chapter">ntorhandshake</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="util.html"
+                        title="next chapter">util</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="../../_sources/docs/crypto/relaycrypto.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="util.html" title="util"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="ntorhandshake.html" title="ntorhandshake"
+             >previous</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../../docs.html" >Documentation</a> &raquo;</li>
+          <li><a href="../crypto.html" >crypto</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

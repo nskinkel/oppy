@@ -1,0 +1,239 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>connection &mdash; oppy 0.1 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <link rel="top" title="oppy 0.1 documentation" href="../../index.html" />
+    <link rel="up" title="connection" href="../connection.html" />
+    <link rel="next" title="v3" href="v3.html" />
+    <link rel="prev" title="connectionpool" href="connectionpool.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="v3.html" title="v3"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="connectionpool.html" title="connectionpool"
+             accesskey="P">previous</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../../docs.html" >Documentation</a> &raquo;</li>
+          <li><a href="../connection.html" accesskey="U">connection</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="module-connection.connection">
+<span id="connection"></span><h1>connection<a class="headerlink" href="#module-connection.connection" title="Permalink to this headline">¶</a></h1>
+<div class="topic">
+<p class="topic-title first">Details</p>
+<p>Connection objects represent TLS connections to Tor entry nodes. Connection
+objects have a few important jobs:</p>
+<blockquote>
+<div><ul class="simple">
+<li>Do the initial handshake to authenticate the entry node and negotiate
+a Link Protocl version (currently oppy only supports Link Protocol
+Version 3)</li>
+<li>Extract cells from incoming data streams and pass them to the
+appropriate circuit (based on circuit ID)</li>
+<li>Write cells from circuits to entry nodes</li>
+<li>Notify all associated circuits when the connection goes down</li>
+</ul>
+</div></blockquote>
+</div>
+<dl class="class">
+<dt id="connection.connection.Connection">
+<em class="property">class </em><tt class="descclassname">connection.connection.</tt><tt class="descname">Connection</tt><big>(</big><em>relay</em><big>)</big><a class="reference internal" href="../../_modules/connection/connection.html#Connection"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#connection.connection.Connection" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <tt class="xref py py-class docutils literal"><span class="pre">twisted.internet.protocol.Protocol</span></tt></p>
+<p>A TLS connection to an entry node.</p>
+<dl class="method">
+<dt id="connection.connection.Connection.writeCell">
+<tt class="descname">writeCell</tt><big>(</big><em>cell</em><big>)</big><a class="reference internal" href="../../_modules/connection/connection.html#Connection.writeCell"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#connection.connection.Connection.writeCell" title="Permalink to this definition">¶</a></dt>
+<dd><p>Write a cell to this connections transport.</p>
+<p>If this connection is not yet open, append to the cell_queue to be
+written when the connection opens up.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>cell</strong> (<em>cell</em>) &#8211; cell to write</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="connection.connection.Connection.dataReceived">
+<tt class="descname">dataReceived</tt><big>(</big><em>data</em><big>)</big><a class="reference internal" href="../../_modules/connection/connection.html#Connection.dataReceived"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#connection.connection.Connection.dataReceived" title="Permalink to this definition">¶</a></dt>
+<dd><p>We received data from the remote connection.</p>
+<p>Extract cells from the data stream and send them along to be
+processed.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>data</strong> (<em>str</em>) &#8211; data received from remote end</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="connection.connection.Connection.connectionMade">
+<tt class="descname">connectionMade</tt><big>(</big><big>)</big><a class="reference internal" href="../../_modules/connection/connection.html#Connection.connectionMade"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#connection.connection.Connection.connectionMade" title="Permalink to this definition">¶</a></dt>
+<dd><p>Initial TLS connection made, immediately start the connection
+handshake.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="connection.connection.Connection.addNewCircuit">
+<tt class="descname">addNewCircuit</tt><big>(</big><em>circuit</em><big>)</big><a class="reference internal" href="../../_modules/connection/connection.html#Connection.addNewCircuit"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#connection.connection.Connection.addNewCircuit" title="Permalink to this definition">¶</a></dt>
+<dd><p>Add new a new circuit to the circuit map for this connection.</p>
+<p>Raise a ValueError if <em>circuit.circuit_id</em> already exists in
+self._circuit_map - that means something went very wrong.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>circuit</strong> (<em>oppy.circuit.circuit.Circuit</em>) &#8211; circuit to add to this
+connection&#8217;s circuit map</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="connection.connection.Connection.closeConnection">
+<tt class="descname">closeConnection</tt><big>(</big><big>)</big><a class="reference internal" href="../../_modules/connection/connection.html#Connection.closeConnection"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#connection.connection.Connection.closeConnection" title="Permalink to this definition">¶</a></dt>
+<dd><p>Close this connection and all associated circuits; notify the
+connection pool.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="connection.connection.Connection.connectionLost">
+<tt class="descname">connectionLost</tt><big>(</big><em>reason</em><big>)</big><a class="reference internal" href="../../_modules/connection/connection.html#Connection.connectionLost"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#connection.connection.Connection.connectionLost" title="Permalink to this definition">¶</a></dt>
+<dd><p>Connection to relay has been lost; close this connection and
+all associated circuits; notify connection pool.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>reason</strong> (<em>reason</em>) &#8211; reason this connection was lost</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="connection.connection.Connection.circuitDestroyed">
+<tt class="descname">circuitDestroyed</tt><big>(</big><em>circuit_id</em><big>)</big><a class="reference internal" href="../../_modules/connection/connection.html#Connection.circuitDestroyed"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#connection.connection.Connection.circuitDestroyed" title="Permalink to this definition">¶</a></dt>
+<dd><p>The circuit with <em>circuit_id</em> has been destroyed.</p>
+<p>Remove this circuit from this connection&#8217;s circuit map if we know
+about it. If there are no remaining circuit&#8217;s using this connection,
+ask the connection pool if this connection should be closed and, if
+so, close this connection.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>circuit_id</strong> (<em>int</em>) &#8211; id of the circuit that was destroyed</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="connectionpool.html"
+                        title="previous chapter">connectionpool</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="v3.html"
+                        title="next chapter">v3</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="../../_sources/docs/connection/connection.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="v3.html" title="v3"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="connectionpool.html" title="connectionpool"
+             >previous</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../../docs.html" >Documentation</a> &raquo;</li>
+          <li><a href="../connection.html" >connection</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

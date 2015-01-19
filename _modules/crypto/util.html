@@ -1,0 +1,350 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>crypto.util &mdash; oppy 0.1 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <link rel="top" title="oppy 0.1 documentation" href="../../index.html" />
+    <link rel="up" title="Module code" href="../index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for crypto.util</h1><div class="highlight"><pre>
+<span class="c"># Copyright 2014, 2015, Nik Kinkel</span>
+<span class="c"># See LICENSE for licensing information</span>
+
+<span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">.. topic:: Details</span>
+
+<span class="sd">    Crypto utility functions. Includes:</span>
+
+<span class="sd">        - Constant time string comparisons</span>
+<span class="sd">        - Wrappers around encryption/decryption operations</span>
+<span class="sd">        - The &quot;recognized&quot; check for incoming cells</span>
+<span class="sd">        - A couple methods for verifying TLS certificate properties (signatures</span>
+<span class="sd">          and times)</span>
+
+<span class="sd">&#39;&#39;&#39;</span>
+<span class="kn">import</span> <span class="nn">hashlib</span>
+<span class="kn">import</span> <span class="nn">hmac</span>
+<span class="kn">import</span> <span class="nn">struct</span>
+
+<span class="kn">from</span> <span class="nn">datetime</span> <span class="kn">import</span> <span class="n">datetime</span>
+<span class="kn">from</span> <span class="nn">itertools</span> <span class="kn">import</span> <span class="n">izip</span>
+
+<span class="kn">import</span> <span class="nn">OpenSSL</span>
+
+<span class="kn">from</span> <span class="nn">Crypto.Cipher</span> <span class="kn">import</span> <span class="n">AES</span>
+<span class="kn">from</span> <span class="nn">Crypto.Util</span> <span class="kn">import</span> <span class="n">asn1</span><span class="p">,</span> <span class="n">Counter</span>
+
+<span class="kn">from</span> <span class="nn">oppy.cell.cell</span> <span class="kn">import</span> <span class="n">Cell</span>
+<span class="kn">from</span> <span class="nn">oppy.cell.definitions</span> <span class="kn">import</span> <span class="n">RECOGNIZED</span><span class="p">,</span> <span class="n">EMPTY_DIGEST</span>
+<span class="kn">from</span> <span class="nn">oppy.cell.fixedlen</span> <span class="kn">import</span> <span class="n">EncryptedCell</span>
+<span class="kn">from</span> <span class="nn">oppy.crypto.exceptions</span> <span class="kn">import</span> <span class="n">UnrecognizedCell</span>
+
+
+<div class="viewcode-block" id="constantStrEqual"><a class="viewcode-back" href="../../docs/crypto/util.html#crypto.util.constantStrEqual">[docs]</a><span class="k">def</span> <span class="nf">constantStrEqual</span><span class="p">(</span><span class="n">str1</span><span class="p">,</span> <span class="n">str2</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;Do a constant-time comparison of str1 and str2, returning **True**</span>
+<span class="sd">    if they are equal, **False** otherwise.</span>
+
+<span class="sd">    Use built-in hmac.compare_digest if it&#39;s available, otherwise custom</span>
+<span class="sd">    constant-time comparison.</span>
+
+<span class="sd">    :param str str1: first string to compare</span>
+<span class="sd">    :param str str2: second string to compare</span>
+<span class="sd">    :returns: **bool** **True** if str1 == str2, **False** otherwise</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="kn">from</span> <span class="nn">hmac</span> <span class="kn">import</span> <span class="n">compare_digest</span>
+        <span class="k">return</span> <span class="n">compare_digest</span><span class="p">(</span><span class="n">str1</span><span class="p">,</span> <span class="n">str2</span><span class="p">)</span>
+    <span class="c"># use our own constant time equality comparison if no stdlib version</span>
+    <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+        <span class="k">pass</span>
+
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">str1</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">str2</span><span class="p">):</span>
+        <span class="c"># we&#39;ve already failed at this point, but loop through</span>
+        <span class="c"># all chars anyway</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="mi">1</span>
+        <span class="n">comp1</span> <span class="o">=</span> <span class="nb">bytearray</span><span class="p">(</span><span class="n">str2</span><span class="p">)</span>
+        <span class="n">comp2</span> <span class="o">=</span> <span class="nb">bytearray</span><span class="p">(</span><span class="n">str2</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="n">comp1</span> <span class="o">=</span> <span class="nb">bytearray</span><span class="p">(</span><span class="n">str1</span><span class="p">)</span>
+        <span class="n">comp2</span> <span class="o">=</span> <span class="nb">bytearray</span><span class="p">(</span><span class="n">str2</span><span class="p">)</span>
+    
+    <span class="k">for</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="ow">in</span> <span class="n">izip</span><span class="p">(</span><span class="n">comp1</span><span class="p">,</span> <span class="n">comp2</span><span class="p">):</span>
+        <span class="n">res</span> <span class="o">|=</span> <span class="n">a</span> <span class="o">^</span> <span class="n">b</span>
+
+    <span class="k">return</span> <span class="n">res</span> <span class="o">==</span> <span class="mi">0</span>
+
+</div>
+<div class="viewcode-block" id="constantStrAllZero"><a class="viewcode-back" href="../../docs/crypto/util.html#crypto.util.constantStrAllZero">[docs]</a><span class="k">def</span> <span class="nf">constantStrAllZero</span><span class="p">(</span><span class="n">s</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;Check if *s* consists of all zero bytes.</span>
+
+<span class="sd">    :param str s: string to check</span>
+<span class="sd">    :returns: **bool** **True** if *s* contains all zero bytes, **False**</span>
+<span class="sd">        otherwise</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="k">return</span> <span class="n">constantStrEqual</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="s">&#39;</span><span class="se">\x00</span><span class="s">&#39;</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="n">s</span><span class="p">))</span>
+
+</div>
+<div class="viewcode-block" id="makeAES128CTRCipher"><a class="viewcode-back" href="../../docs/crypto/util.html#crypto.util.makeAES128CTRCipher">[docs]</a><span class="k">def</span> <span class="nf">makeAES128CTRCipher</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">initial_value</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;Create and return a new AES128-CTR cipher instance.</span>
+
+<span class="sd">    :param str key: key to use for this cipher</span>
+<span class="sd">    :param initial_value: initial_value to use</span>
+<span class="sd">    :returns: **Crypto.Cipher.AES.AES**</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="n">ctr</span> <span class="o">=</span> <span class="n">Counter</span><span class="o">.</span><span class="n">new</span><span class="p">(</span><span class="mi">128</span><span class="p">,</span> <span class="n">initial_value</span><span class="o">=</span><span class="n">initial_value</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">AES</span><span class="o">.</span><span class="n">new</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">AES</span><span class="o">.</span><span class="n">MODE_CTR</span><span class="p">,</span> <span class="n">counter</span><span class="o">=</span><span class="n">ctr</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="makeHMACSHA256"><a class="viewcode-back" href="../../docs/crypto/util.html#crypto.util.makeHMACSHA256">[docs]</a><span class="k">def</span> <span class="nf">makeHMACSHA256</span><span class="p">(</span><span class="n">msg</span><span class="p">,</span> <span class="n">key</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;Make a new HMAC-SHA256 with *msg* and *key* and return digest byte</span>
+<span class="sd">    string.</span>
+
+<span class="sd">    :param str msg: msg</span>
+<span class="sd">    :param str key: key to use</span>
+<span class="sd">    :returns: **str** HMAC digest</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="n">t</span> <span class="o">=</span> <span class="n">hmac</span><span class="o">.</span><span class="n">new</span><span class="p">(</span><span class="n">msg</span><span class="o">=</span><span class="n">msg</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">,</span> <span class="n">digestmod</span><span class="o">=</span><span class="n">hashlib</span><span class="o">.</span><span class="n">sha256</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">t</span><span class="o">.</span><span class="n">digest</span><span class="p">()</span>
+
+</div>
+<div class="viewcode-block" id="makePayloadWithDigest"><a class="viewcode-back" href="../../docs/crypto/util.html#crypto.util.makePayloadWithDigest">[docs]</a><span class="k">def</span> <span class="nf">makePayloadWithDigest</span><span class="p">(</span><span class="n">payload</span><span class="p">,</span> <span class="n">digest</span><span class="o">=</span><span class="n">EMPTY_DIGEST</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;Make a new payload with *digest* inserted in the correct position.</span>
+
+<span class="sd">    :param str payload: payload in which to insert digest</span>
+<span class="sd">    :param str digest: digest to insert</span>
+<span class="sd">    :returns: **str** payload with digest inserted into correct position</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="n">DIGEST_START</span> <span class="o">=</span> <span class="mi">5</span>
+    <span class="n">DIGEST_END</span> <span class="o">=</span> <span class="mi">9</span>
+    <span class="k">return</span> <span class="n">payload</span><span class="p">[:</span><span class="n">DIGEST_START</span><span class="p">]</span> <span class="o">+</span> <span class="n">digest</span> <span class="o">+</span> <span class="n">payload</span><span class="p">[</span><span class="n">DIGEST_END</span><span class="p">:]</span>
+
+</div>
+<div class="viewcode-block" id="encryptCellToTarget"><a class="viewcode-back" href="../../docs/crypto/util.html#crypto.util.encryptCellToTarget">[docs]</a><span class="k">def</span> <span class="nf">encryptCellToTarget</span><span class="p">(</span><span class="n">cell</span><span class="p">,</span> <span class="n">crypt_path</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">early</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;Encrypt *cell* to the *target* relay in *crypt_path* and update</span>
+<span class="sd">    the appropriate forward digest.</span>
+
+<span class="sd">    :param cell cell: cell to encrypt</span>
+<span class="sd">    :param list crypt_path: list of RelayCrypto instances available for</span>
+<span class="sd">        encryption</span>
+<span class="sd">    :param int target: target node to encrypt to</span>
+<span class="sd">    :param bool early: if **True**, use a RELAY_EARLY cmd instead of a</span>
+<span class="sd">        RELAY cmd</span>
+<span class="sd">    :returns: **oppy.cell.fixedlen.EncryptedCell**</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="k">assert</span> <span class="n">target</span> <span class="o">&gt;=</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">target</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">crypt_path</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">cell</span><span class="o">.</span><span class="n">rheader</span><span class="o">.</span><span class="n">digest</span> <span class="o">==</span> <span class="n">EMPTY_DIGEST</span>
+
+    <span class="c"># 1) update f_digest with cell payload bytes</span>
+    <span class="n">crypt_path</span><span class="p">[</span><span class="n">target</span><span class="p">]</span><span class="o">.</span><span class="n">forward_digest</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">cell</span><span class="o">.</span><span class="n">getPayload</span><span class="p">())</span>
+    <span class="c"># 2) insert first four bytes into new digest position</span>
+    <span class="n">cell</span><span class="o">.</span><span class="n">rheader</span><span class="o">.</span><span class="n">digest</span> <span class="o">=</span> <span class="n">crypt_path</span><span class="p">[</span><span class="n">target</span><span class="p">]</span><span class="o">.</span><span class="n">forward_digest</span><span class="o">.</span><span class="n">digest</span><span class="p">()[:</span><span class="mi">4</span><span class="p">]</span>
+    <span class="c"># 3) encrypt payload</span>
+    <span class="n">payload</span> <span class="o">=</span> <span class="n">cell</span><span class="o">.</span><span class="n">getPayload</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">target</span> <span class="o">+</span> <span class="mi">1</span><span class="p">):</span>
+        <span class="n">payload</span> <span class="o">=</span> <span class="n">crypt_path</span><span class="p">[</span><span class="n">node</span><span class="p">]</span><span class="o">.</span><span class="n">forward_cipher</span><span class="o">.</span><span class="n">encrypt</span><span class="p">(</span><span class="n">payload</span><span class="p">)</span>
+    <span class="c"># 4) return encrypted relay cell with new payload</span>
+    <span class="k">return</span> <span class="n">EncryptedCell</span><span class="o">.</span><span class="n">make</span><span class="p">(</span><span class="n">cell</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">circ_id</span><span class="p">,</span> <span class="n">payload</span><span class="p">,</span> <span class="n">early</span><span class="o">=</span><span class="n">early</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="cellRecognized"><a class="viewcode-back" href="../../docs/crypto/util.html#crypto.util.cellRecognized">[docs]</a><span class="k">def</span> <span class="nf">cellRecognized</span><span class="p">(</span><span class="n">payload</span><span class="p">,</span> <span class="n">relay_crypto</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;Return **True** if this payload is *recognized*.</span>
+
+<span class="sd">    .. note:: See tor-spec Section 6.1 for details about what it means for a</span>
+<span class="sd">        cell to be *recognized*.</span>
+
+<span class="sd">    :param str payload: payload to check if recognized</span>
+<span class="sd">    :param oppy.crypto.relaycrypto.RelayCrypto relay_crypto: RelayCrypto</span>
+<span class="sd">        instance to use for checking if payload is recognized</span>
+<span class="sd">    :returns: **bool** **True** if this payload is recognized, **False**</span>
+<span class="sd">        otherwise</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="n">test_payload</span> <span class="o">=</span> <span class="n">payload</span>
+    <span class="n">recognized</span> <span class="o">=</span> <span class="n">test_payload</span><span class="p">[</span><span class="mi">2</span><span class="p">:</span><span class="mi">4</span><span class="p">]</span>
+    <span class="n">digest</span> <span class="o">=</span> <span class="n">test_payload</span><span class="p">[</span><span class="mi">5</span><span class="p">:</span><span class="mi">9</span><span class="p">]</span>
+    <span class="n">test_payload</span> <span class="o">=</span> <span class="n">makePayloadWithDigest</span><span class="p">(</span><span class="n">test_payload</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">recognized</span> <span class="o">!=</span> <span class="n">RECOGNIZED</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">False</span>
+
+    <span class="n">test_digest</span> <span class="o">=</span> <span class="n">relay_crypto</span><span class="o">.</span><span class="n">backward_digest</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+    <span class="n">test_digest</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">test_payload</span><span class="p">)</span>
+    <span class="c"># no danger of timing attack here since we just</span>
+    <span class="c"># drop the cell if it&#39;s not recognized</span>
+    <span class="k">return</span> <span class="n">test_digest</span><span class="o">.</span><span class="n">digest</span><span class="p">()[:</span><span class="mi">4</span><span class="p">]</span> <span class="o">==</span> <span class="n">digest</span>
+
+</div>
+<div class="viewcode-block" id="decryptCellUntilRecognized"><a class="viewcode-back" href="../../docs/crypto/util.html#crypto.util.decryptCellUntilRecognized">[docs]</a><span class="k">def</span> <span class="nf">decryptCellUntilRecognized</span><span class="p">(</span><span class="n">cell</span><span class="p">,</span> <span class="n">crypt_path</span><span class="p">,</span> <span class="n">origin</span><span class="o">=</span><span class="mi">2</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;Decrypt *cell* until it is recognized or we&#39;ve tried all RelayCrypto&#39;s</span>
+<span class="sd">    in *crypt_path*.</span>
+
+<span class="sd">    Attempt to decrypt the cell one hop at a time. Stop if the cell is</span>
+<span class="sd">    recognized. Raise an exception if the cell is not recognized at all.</span>
+
+<span class="sd">    :param cell cell: cell to decrypt</span>
+<span class="sd">    :param list, oppy.crypto.relaycrypto.RelayCrypto crypt_path: list of</span>
+<span class="sd">        RelayCrypto instances to use for decryption</span>
+<span class="sd">    :param int origin: the originating hop we think this cell came from</span>
+<span class="sd">    :returns: the concrete RelayCell type of this decrypted cell</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="k">assert</span> <span class="mi">0</span> <span class="o">&lt;=</span> <span class="n">origin</span> <span class="o">&lt;=</span> <span class="mi">2</span><span class="p">,</span> <span class="s">&#39;We can only handle 3-hop paths&#39;</span>
+
+    <span class="n">recognized</span> <span class="o">=</span> <span class="bp">False</span>
+    <span class="n">payload</span> <span class="o">=</span> <span class="n">cell</span><span class="o">.</span><span class="n">getPayload</span><span class="p">()</span>
+    <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">crypt_path</span><span class="p">)):</span>
+        <span class="n">relay_crypto</span> <span class="o">=</span> <span class="n">crypt_path</span><span class="p">[</span><span class="n">node</span><span class="p">]</span>
+        <span class="n">payload</span> <span class="o">=</span> <span class="n">relay_crypto</span><span class="o">.</span><span class="n">backward_cipher</span><span class="o">.</span><span class="n">decrypt</span><span class="p">(</span><span class="n">payload</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">cellRecognized</span><span class="p">(</span><span class="n">payload</span><span class="p">,</span> <span class="n">relay_crypto</span><span class="p">):</span>
+            <span class="n">recognized</span> <span class="o">=</span> <span class="bp">True</span>
+            <span class="n">origin</span> <span class="o">=</span> <span class="n">node</span>
+            <span class="k">break</span>
+
+    <span class="k">if</span> <span class="n">recognized</span><span class="p">:</span>
+        <span class="n">updated_payload</span> <span class="o">=</span> <span class="n">makePayloadWithDigest</span><span class="p">(</span><span class="n">payload</span><span class="p">)</span>
+        <span class="n">crypt_path</span><span class="p">[</span><span class="n">origin</span><span class="p">]</span><span class="o">.</span><span class="n">backward_digest</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">updated_payload</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">cell</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">link_version</span> <span class="o">&lt;</span> <span class="mi">4</span><span class="p">:</span>
+            <span class="n">cid</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;!H&#39;</span><span class="p">,</span> <span class="n">cell</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">circ_id</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">cid</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;!I&#39;</span><span class="p">,</span> <span class="n">cell</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">circ_id</span><span class="p">)</span>
+        <span class="n">cmd</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;!B&#39;</span><span class="p">,</span> <span class="n">cell</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">cmd</span><span class="p">)</span>
+
+        <span class="n">dec</span> <span class="o">=</span> <span class="n">Cell</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">cid</span> <span class="o">+</span> <span class="n">cmd</span> <span class="o">+</span> <span class="n">payload</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">(</span><span class="n">dec</span><span class="p">,</span> <span class="n">origin</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">UnrecognizedCell</span><span class="p">()</span>
+
+</div>
+<div class="viewcode-block" id="verifyCertSig"><a class="viewcode-back" href="../../docs/crypto/util.html#crypto.util.verifyCertSig">[docs]</a><span class="k">def</span> <span class="nf">verifyCertSig</span><span class="p">(</span><span class="n">id_cert</span><span class="p">,</span> <span class="n">cert_to_verify</span><span class="p">,</span> <span class="n">algo</span><span class="o">=</span><span class="s">&#39;sha1&#39;</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;Verify that the SSL certificate *id_cert* has signed the TLS cert</span>
+<span class="sd">    *cert_to_verify*.</span>
+
+<span class="sd">    :param id_cert: Identification Certificate</span>
+<span class="sd">    :type id_cert: OpenSSL.crypto.X509</span>
+<span class="sd">    :param cert_to_verify: certificate to verify signature on</span>
+<span class="sd">    :type cert_to_verify: OpenSSL.crypto.X509</span>
+<span class="sd">    :param algo: algorithm to use for certificate verification</span>
+<span class="sd">    :type algo: str</span>
+
+<span class="sd">    :returns: **bool** **True** if the signature of *cert_to_verify* can be</span>
+<span class="sd">        verified from *id_cert*, **False** otherwise</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="n">cert_to_verify_ASN1</span> <span class="o">=</span> <span class="n">OpenSSL</span><span class="o">.</span><span class="n">crypto</span><span class="o">.</span><span class="n">dump_certificate</span><span class="p">(</span>
+                                <span class="n">OpenSSL</span><span class="o">.</span><span class="n">crypto</span><span class="o">.</span><span class="n">FILETYPE_ASN1</span><span class="p">,</span> <span class="n">cert_to_verify</span><span class="p">)</span>
+
+    <span class="n">der</span> <span class="o">=</span> <span class="n">asn1</span><span class="o">.</span><span class="n">DerSequence</span><span class="p">()</span>
+    <span class="n">der</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">cert_to_verify_ASN1</span><span class="p">)</span>
+    <span class="n">cert_to_verify_DER</span> <span class="o">=</span> <span class="n">der</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">cert_to_verify_ALGO</span> <span class="o">=</span> <span class="n">der</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">cert_to_verify_SIG</span> <span class="o">=</span> <span class="n">der</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+
+    <span class="n">sig_DER</span> <span class="o">=</span> <span class="n">asn1</span><span class="o">.</span><span class="n">DerObject</span><span class="p">()</span>
+    <span class="n">sig_DER</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">cert_to_verify_SIG</span><span class="p">)</span>
+
+    <span class="n">sig</span> <span class="o">=</span> <span class="n">sig_DER</span><span class="o">.</span><span class="n">payload</span>
+
+    <span class="c"># first byte is number of unused bytes. should be zero</span>
+    <span class="k">assert</span> <span class="n">sig</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="s">&#39;</span><span class="se">\x00</span><span class="s">&#39;</span>
+    <span class="n">sig</span> <span class="o">=</span> <span class="n">sig</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">OpenSSL</span><span class="o">.</span><span class="n">crypto</span><span class="o">.</span><span class="n">verify</span><span class="p">(</span><span class="n">id_cert</span><span class="p">,</span> <span class="n">sig</span><span class="p">,</span> <span class="n">cert_to_verify_DER</span><span class="p">,</span> <span class="n">algo</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">True</span>
+    <span class="k">except</span> <span class="n">OpenSSL</span><span class="o">.</span><span class="n">crypto</span><span class="o">.</span><span class="n">Error</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">False</span>
+
+
+<span class="c"># XXX should we check that the time is not later than the current time?</span></div>
+<div class="viewcode-block" id="validCertTime"><a class="viewcode-back" href="../../docs/crypto/util.html#crypto.util.validCertTime">[docs]</a><span class="k">def</span> <span class="nf">validCertTime</span><span class="p">(</span><span class="n">cert</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;Verify that TLS certificate *cert*&#39;s time is not earlier than</span>
+<span class="sd">    cert.notBefore and not later than cert.notAfter.</span>
+
+<span class="sd">    :param OpenSSL.crypto.X509 cert: TLS Certificate to verify times of</span>
+<span class="sd">    :returns: **bool** **True** if cert.notBefore &lt; now &lt; cert.notAfter,</span>
+<span class="sd">        **False** otherwise</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="n">now</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span>
+    <span class="n">validAfter</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">strptime</span><span class="p">(</span><span class="n">cert</span><span class="o">.</span><span class="n">get_notBefore</span><span class="p">(),</span> <span class="s">&#39;%Y%m</span><span class="si">%d</span><span class="s">%H%M%SZ&#39;</span><span class="p">)</span>
+    <span class="n">validUntil</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">strptime</span><span class="p">(</span><span class="n">cert</span><span class="o">.</span><span class="n">get_notAfter</span><span class="p">(),</span> <span class="s">&#39;%Y%m</span><span class="si">%d</span><span class="s">%H%M%SZ&#39;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">validAfter</span> <span class="o">&lt;</span> <span class="n">now</span> <span class="o">&lt;</span> <span class="n">validUntil</span></div>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

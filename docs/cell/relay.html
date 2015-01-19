@@ -1,0 +1,633 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>relay &mdash; oppy 0.1 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <link rel="top" title="oppy 0.1 documentation" href="../../index.html" />
+    <link rel="up" title="cell" href="../cell.html" />
+    <link rel="next" title="varlen" href="varlen.html" />
+    <link rel="prev" title="fixedlen" href="fixedlen.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="varlen.html" title="varlen"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="fixedlen.html" title="fixedlen"
+             accesskey="P">previous</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../../docs.html" >Documentation</a> &raquo;</li>
+          <li><a href="../cell.html" accesskey="U">cell</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="module-cell.relay">
+<span id="relay"></span><h1>relay<a class="headerlink" href="#module-cell.relay" title="Permalink to this headline">¶</a></h1>
+<dl class="class">
+<dt id="cell.relay.RelayCell">
+<em class="property">class </em><tt class="descclassname">cell.relay.</tt><tt class="descname">RelayCell</tt><big>(</big><em>header</em>, <em>rheader=None</em>, <em>rpayload=''</em><big>)</big><a class="reference internal" href="../../_modules/cell/relay.html#RelayCell"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.relay.RelayCell" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <tt class="xref py py-class docutils literal"><span class="pre">oppy.cell.fixedlen.FixedLenCell</span></tt></p>
+<p>A container class for representing relay cells.</p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">All Relay cells are fixed-length (length determined by
+Link Protocol version in use).</p>
+</div>
+<dl class="attribute">
+<dt id="cell.relay.RelayCell.rheader">
+<tt class="descname">rheader</tt><em class="property"> = None</em><a class="headerlink" href="#cell.relay.RelayCell.rheader" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="attribute">
+<dt id="cell.relay.RelayCell.rpayload">
+<tt class="descname">rpayload</tt><em class="property"> = None</em><a class="headerlink" href="#cell.relay.RelayCell.rpayload" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="method">
+<dt id="cell.relay.RelayCell.getBytes">
+<tt class="descname">getBytes</tt><big>(</big><em>trimmed=False</em><big>)</big><a class="reference internal" href="../../_modules/cell/relay.html#RelayCell.getBytes"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.relay.RelayCell.getBytes" title="Permalink to this definition">¶</a></dt>
+<dd><p>Construct and return the byte string represented by this cell.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>trimmed</strong> (<em>bool</em>) &#8211; If <strong>True</strong>, return the non-padded payload.
+Otherwise pad the payload with null bytes to the fixed-size
+length in use according to the Link Protocol version.</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><strong>str</strong> byte string represented by this cell</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="cell.relay.RelayCell.relayHeaderRange">
+<tt class="descname">relayHeaderRange</tt><big>(</big><big>)</big><a class="reference internal" href="../../_modules/cell/relay.html#RelayCell.relayHeaderRange"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.relay.RelayCell.relayHeaderRange" title="Permalink to this definition">¶</a></dt>
+<dd><p>Return a two-tuple indicating the (start,end) indices of
+this cell&#8217;s relay header.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Returns:</th><td class="field-body"><strong>tuple, int</strong> (start, end) indices of this cell&#8217;s
+relay header</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="cell.relay.RelayCell.relayPayloadRange">
+<tt class="descname">relayPayloadRange</tt><big>(</big><big>)</big><a class="reference internal" href="../../_modules/cell/relay.html#RelayCell.relayPayloadRange"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.relay.RelayCell.relayPayloadRange" title="Permalink to this definition">¶</a></dt>
+<dd><p>Return a two-tuple indicating the (start,end) indices of
+this cell&#8217;s relay header.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Returns:</th><td class="field-body"><strong>tuple, int</strong> (start, end) indices of this cell&#8217;s
+relay payload</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="class">
+<dt id="cell.relay.RelayCell.RelayHeader">
+<em class="property">class </em><tt class="descname">RelayHeader</tt><big>(</big><em>cmd</em>, <em>recognized</em>, <em>stream_id</em>, <em>digest</em>, <em>rpayload_len</em><big>)</big><a class="reference internal" href="../../_modules/cell/relay.html#RelayCell.RelayHeader"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.relay.RelayCell.RelayHeader" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <tt class="xref py py-class docutils literal"><span class="pre">object</span></tt></p>
+<p>A simple container for relay header information.</p>
+<dl class="attribute">
+<dt id="cell.relay.RelayCell.RelayHeader.FORMAT">
+<tt class="descname">FORMAT</tt><em class="property"> = '!B2sH4sH'</em><a class="headerlink" href="#cell.relay.RelayCell.RelayHeader.FORMAT" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="attribute">
+<dt id="cell.relay.RelayCell.RelayHeader.cmd">
+<tt class="descname">cmd</tt><em class="property"> = None</em><a class="headerlink" href="#cell.relay.RelayCell.RelayHeader.cmd" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="attribute">
+<dt id="cell.relay.RelayCell.RelayHeader.recognized">
+<tt class="descname">recognized</tt><em class="property"> = None</em><a class="headerlink" href="#cell.relay.RelayCell.RelayHeader.recognized" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="attribute">
+<dt id="cell.relay.RelayCell.RelayHeader.stream_id">
+<tt class="descname">stream_id</tt><em class="property"> = None</em><a class="headerlink" href="#cell.relay.RelayCell.RelayHeader.stream_id" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="attribute">
+<dt id="cell.relay.RelayCell.RelayHeader.digest">
+<tt class="descname">digest</tt><em class="property"> = None</em><a class="headerlink" href="#cell.relay.RelayCell.RelayHeader.digest" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="attribute">
+<dt id="cell.relay.RelayCell.RelayHeader.rpayload_len">
+<tt class="descname">rpayload_len</tt><em class="property"> = None</em><a class="headerlink" href="#cell.relay.RelayCell.RelayHeader.rpayload_len" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="method">
+<dt id="cell.relay.RelayCell.RelayHeader.getBytes">
+<tt class="descname">getBytes</tt><big>(</big><big>)</big><a class="reference internal" href="../../_modules/cell/relay.html#RelayCell.RelayHeader.getBytes"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.relay.RelayCell.RelayHeader.getBytes" title="Permalink to this definition">¶</a></dt>
+<dd><p>Construct and return the byte string represented by this
+cell.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Returns:</th><td class="field-body"><strong>str</strong> byte string represented by this cell.</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="cell.relay.RelayBeginDirCell">
+<em class="property">class </em><tt class="descclassname">cell.relay.</tt><tt class="descname">RelayBeginDirCell</tt><big>(</big><em>header</em><big>)</big><a class="reference internal" href="../../_modules/cell/relay.html#RelayBeginDirCell"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.relay.RelayBeginDirCell" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#cell.relay.RelayCell" title="cell.relay.RelayCell"><tt class="xref py py-class docutils literal"><span class="pre">cell.relay.RelayCell</span></tt></a></p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">Not Implemented</p>
+</div>
+</dd></dl>
+
+<dl class="class">
+<dt id="cell.relay.RelayBeginCell">
+<em class="property">class </em><tt class="descclassname">cell.relay.</tt><tt class="descname">RelayBeginCell</tt><big>(</big><em>header</em>, <em>rheader=None</em>, <em>addr=None</em>, <em>flags=None</em><big>)</big><a class="reference internal" href="../../_modules/cell/relay.html#RelayBeginCell"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.relay.RelayBeginCell" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#cell.relay.RelayCell" title="cell.relay.RelayCell"><tt class="xref py py-class docutils literal"><span class="pre">cell.relay.RelayCell</span></tt></a></p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">tor-spec, Section 6.2</p>
+</div>
+<dl class="staticmethod">
+<dt id="cell.relay.RelayBeginCell.make">
+<em class="property">static </em><tt class="descname">make</tt><big>(</big><em>circ_id</em>, <em>stream_id</em>, <em>request</em>, <em>flags=None</em>, <em>link_version=3</em><big>)</big><a class="reference internal" href="../../_modules/cell/relay.html#RelayBeginCell.make"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.relay.RelayBeginCell.make" title="Permalink to this definition">¶</a></dt>
+<dd><p>Build and return a RelayBegin cell, filling in default values
+when possible.</p>
+<p>Automatically create a default FixedLenCell.Header and
+RelayCell.RelayHeader.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>circ_id</strong> (<em>int</em>) &#8211; Circuit ID to use in this cell</li>
+<li><strong>stream_id</strong> (<em>int</em>) &#8211; Stream ID to use in this cell</li>
+<li><strong>request</strong> (<em>oppy.util.ExitRequest</em>) &#8211; destination this
+cell will request a connection to</li>
+<li><strong>int flags</strong> (<em>list,</em>) &#8211; flags to use for this connection</li>
+<li><strong>link_version</strong> (<em>int</em>) &#8211; Link Protocol version in use on this
+connection</li>
+</ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first last"><a class="reference internal" href="#cell.relay.RelayBeginCell" title="cell.relay.RelayBeginCell"><tt class="xref py py-class docutils literal"><span class="pre">RelayBeginCell</span></tt></a></p>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="cell.relay.RelayBeginCell.getBytes">
+<tt class="descname">getBytes</tt><big>(</big><em>trimmed=False</em><big>)</big><a class="reference internal" href="../../_modules/cell/relay.html#RelayBeginCell.getBytes"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.relay.RelayBeginCell.getBytes" title="Permalink to this definition">¶</a></dt>
+<dd><p>Build and return the raw byte string this cell represents.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>trimmed</strong> (<em>bool</em>) &#8211; If <strong>True</strong>, do not pad this cell&#8217;s payload.</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><strong>str</strong> raw byte string represented by this cell</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="cell.relay.RelayConnectedCell">
+<em class="property">class </em><tt class="descclassname">cell.relay.</tt><tt class="descname">RelayConnectedCell</tt><big>(</big><em>header</em>, <em>rheader=None</em>, <em>addr_type=None</em>, <em>addr=None</em>, <em>ttl=None</em><big>)</big><a class="reference internal" href="../../_modules/cell/relay.html#RelayConnectedCell"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.relay.RelayConnectedCell" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#cell.relay.RelayCell" title="cell.relay.RelayCell"><tt class="xref py py-class docutils literal"><span class="pre">cell.relay.RelayCell</span></tt></a></p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">tor-spec, Section 6.2</p>
+</div>
+<dl class="method">
+<dt id="cell.relay.RelayConnectedCell.getBytes">
+<tt class="descname">getBytes</tt><big>(</big><em>trimmed=False</em><big>)</big><a class="reference internal" href="../../_modules/cell/relay.html#RelayConnectedCell.getBytes"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.relay.RelayConnectedCell.getBytes" title="Permalink to this definition">¶</a></dt>
+<dd><p>Build and return the raw byte string this cell represents.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>trimmed</strong> (<em>bool</em>) &#8211; if <strong>True</strong>, do not pad payload bytes</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><strong>str</strong> raw bytes this cell represents</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="cell.relay.RelayDataCell">
+<em class="property">class </em><tt class="descclassname">cell.relay.</tt><tt class="descname">RelayDataCell</tt><big>(</big><em>header</em>, <em>rheader=None</em>, <em>rpayload=''</em><big>)</big><a class="reference internal" href="../../_modules/cell/relay.html#RelayDataCell"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.relay.RelayDataCell" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#cell.relay.RelayCell" title="cell.relay.RelayCell"><tt class="xref py py-class docutils literal"><span class="pre">cell.relay.RelayCell</span></tt></a></p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">tor-spec, Section 6.2</p>
+</div>
+<dl class="staticmethod">
+<dt id="cell.relay.RelayDataCell.make">
+<em class="property">static </em><tt class="descname">make</tt><big>(</big><em>circ_id</em>, <em>stream_id</em>, <em>rpayload</em>, <em>link_version=3</em><big>)</big><a class="reference internal" href="../../_modules/cell/relay.html#RelayDataCell.make"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.relay.RelayDataCell.make" title="Permalink to this definition">¶</a></dt>
+<dd><p>Construct and return a RelayData cell, using default values
+where possible.</p>
+<p>Create a FixedLenCell.Header and a RelayCell.RelayHeader.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<li><strong>circ_id</strong> (<em>int</em>) &#8211; Circuit ID to use in this cell</li>
+<li><strong>stream_id</strong> (<em>int</em>) &#8211; Stream ID to use in this cell</li>
+<li><strong>rpayload</strong> (<em>str</em>) &#8211; data to use as the relay payload</li>
+<li><strong>link_version</strong> (<em>int</em>) &#8211; Link Protocol version in use</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="cell.relay.RelayDropCell">
+<em class="property">class </em><tt class="descclassname">cell.relay.</tt><tt class="descname">RelayDropCell</tt><big>(</big><em>header</em>, <em>rheader=None</em>, <em>rpayload=''</em><big>)</big><a class="reference internal" href="../../_modules/cell/relay.html#RelayDropCell"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.relay.RelayDropCell" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#cell.relay.RelayCell" title="cell.relay.RelayCell"><tt class="xref py py-class docutils literal"><span class="pre">cell.relay.RelayCell</span></tt></a></p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">tor-spec, Section 6.2</p>
+</div>
+</dd></dl>
+
+<dl class="class">
+<dt id="cell.relay.RelayEndCell">
+<em class="property">class </em><tt class="descclassname">cell.relay.</tt><tt class="descname">RelayEndCell</tt><big>(</big><em>header</em>, <em>rheader=None</em>, <em>reason=None</em>, <em>reason_data=None</em><big>)</big><a class="reference internal" href="../../_modules/cell/relay.html#RelayEndCell"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.relay.RelayEndCell" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#cell.relay.RelayCell" title="cell.relay.RelayCell"><tt class="xref py py-class docutils literal"><span class="pre">cell.relay.RelayCell</span></tt></a></p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">tor-spec, Section 6.3</p>
+</div>
+<dl class="staticmethod">
+<dt id="cell.relay.RelayEndCell.make">
+<em class="property">static </em><tt class="descname">make</tt><big>(</big><em>circ_id</em>, <em>stream_id</em>, <em>reason=6</em>, <em>reason_data=''</em>, <em>link_version=3</em><big>)</big><a class="reference internal" href="../../_modules/cell/relay.html#RelayEndCell.make"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.relay.RelayEndCell.make" title="Permalink to this definition">¶</a></dt>
+<dd><p>Construct and return a RelayEnd cell, using default values where
+possible.</p>
+<p>Create a FixedLenCell.Header and a RelayCell.RelayHeader.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>circ_id</strong> (<em>int</em>) &#8211; Circuit ID to use in this cell</li>
+<li><strong>stream_id</strong> (<em>int</em>) &#8211; Stream ID to use in this cell</li>
+<li><strong>reason</strong> (<em>int</em>) &#8211; Single byte that describes the reason this stream
+was closed</li>
+<li><strong>reason_data</strong> (<em>str</em>) &#8211; with REASON_EXITPOLICY, this optional field
+may be filled in</li>
+</ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first last"><tt class="xref py py-class docutils literal"><span class="pre">RelayEndCell</span></tt></p>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="cell.relay.RelayEndCell.getBytes">
+<tt class="descname">getBytes</tt><big>(</big><em>trimmed=False</em><big>)</big><a class="reference internal" href="../../_modules/cell/relay.html#RelayEndCell.getBytes"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.relay.RelayEndCell.getBytes" title="Permalink to this definition">¶</a></dt>
+<dd><p>Build and return the raw byte string this cell represents.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>trimmed</strong> (<em>bool</em>) &#8211; if <strong>True</strong>, do not pad payload bytes</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><strong>str</strong> raw byte string this cell represents</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="cell.relay.RelayExtend2Cell">
+<em class="property">class </em><tt class="descclassname">cell.relay.</tt><tt class="descname">RelayExtend2Cell</tt><big>(</big><em>header</em>, <em>rheader=None</em>, <em>nspec=None</em>, <em>lspecs=None</em>, <em>htype=None</em>, <em>hlen=None</em>, <em>hdata=None</em><big>)</big><a class="reference internal" href="../../_modules/cell/relay.html#RelayExtend2Cell"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.relay.RelayExtend2Cell" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#cell.relay.RelayCell" title="cell.relay.RelayCell"><tt class="xref py py-class docutils literal"><span class="pre">cell.relay.RelayCell</span></tt></a></p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">tor-spec, Section 5.1.2</p>
+</div>
+<dl class="staticmethod">
+<dt id="cell.relay.RelayExtend2Cell.make">
+<em class="property">static </em><tt class="descname">make</tt><big>(</big><em>circ_id</em>, <em>stream_id=0</em>, <em>nspec=None</em>, <em>lspecs=None</em>, <em>htype=2</em>, <em>hlen=84</em>, <em>hdata=''</em>, <em>link_version=3</em>, <em>early=True</em><big>)</big><a class="reference internal" href="../../_modules/cell/relay.html#RelayExtend2Cell.make"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.relay.RelayExtend2Cell.make" title="Permalink to this definition">¶</a></dt>
+<dd><p>Construct and return a RelayExtend2Cell, using default values where
+possible.</p>
+<p>Create a FixedLenCell.Header and a RelayCell.RelayHeader for use
+in this cell.</p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">oppy currently only supports the NTor handshake and will
+reject unrecognized htype&#8217;s and hlen&#8217;s.</p>
+</div>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>circ_id</strong> (<em>int</em>) &#8211; Circuit ID to use in this cell</li>
+<li><strong>stream_id</strong> (<em>int</em>) &#8211; Stream ID to use in this cell (should be zero)</li>
+<li><strong>nspec</strong> (<em>int</em>) &#8211; the number of Link Specifiers in this cell</li>
+<li><strong>oppy.cell.util.LinkSpecifier lspecs</strong> (<em>list,</em>) &#8211; list of
+Link Specifiers to include in this cell</li>
+<li><strong>htype</strong> (<em>int</em>) &#8211; Type of handshake in use</li>
+<li><strong>hlen</strong> (<em>int</em>) &#8211; length of the handshake data field</li>
+<li><strong>hdata</strong> (<em>str</em>) &#8211; handshake data (<em>onion skin</em>)</li>
+<li><strong>link_version</strong> (<em>int</em>) &#8211; Link Protocol version in use</li>
+<li><strong>early</strong> (<em>bool</em>) &#8211; if <strong>True</strong>, use a RELAY_EARLY cmd instead of
+RELAY cmd</li>
+</ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first last"><tt class="xref py py-class docutils literal"><span class="pre">RelayExtend2Cell</span></tt></p>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="cell.relay.RelayExtend2Cell.getBytes">
+<tt class="descname">getBytes</tt><big>(</big><em>trimmed=False</em><big>)</big><a class="reference internal" href="../../_modules/cell/relay.html#RelayExtend2Cell.getBytes"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.relay.RelayExtend2Cell.getBytes" title="Permalink to this definition">¶</a></dt>
+<dd><p>Build and return the raw byte string this cell represents.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>trimmed</strong> (<em>bool</em>) &#8211; if <strong>True</strong>, do not pad payload bytes</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><strong>str</strong> raw byte string this cell represents</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="cell.relay.RelayExtended2Cell">
+<em class="property">class </em><tt class="descclassname">cell.relay.</tt><tt class="descname">RelayExtended2Cell</tt><big>(</big><em>header</em>, <em>rheader=None</em>, <em>hlen=None</em>, <em>hdata=None</em><big>)</big><a class="reference internal" href="../../_modules/cell/relay.html#RelayExtended2Cell"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.relay.RelayExtended2Cell" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#cell.relay.RelayCell" title="cell.relay.RelayCell"><tt class="xref py py-class docutils literal"><span class="pre">cell.relay.RelayCell</span></tt></a></p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">tor-spec, Section 5.1, 5.1.2</p>
+</div>
+<dl class="method">
+<dt id="cell.relay.RelayExtended2Cell.getBytes">
+<tt class="descname">getBytes</tt><big>(</big><em>trimmed=False</em><big>)</big><a class="reference internal" href="../../_modules/cell/relay.html#RelayExtended2Cell.getBytes"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.relay.RelayExtended2Cell.getBytes" title="Permalink to this definition">¶</a></dt>
+<dd><p>Build and return the raw byte string this cell represents.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>trimmed</strong> (<em>bool</em>) &#8211; if <strong>True</strong>, do not pad payload bytes</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><strong>str</strong> raw byte string this cell represents</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="cell.relay.RelayExtendedCell">
+<em class="property">class </em><tt class="descclassname">cell.relay.</tt><tt class="descname">RelayExtendedCell</tt><big>(</big><em>header</em><big>)</big><a class="reference internal" href="../../_modules/cell/relay.html#RelayExtendedCell"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.relay.RelayExtendedCell" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#cell.relay.RelayCell" title="cell.relay.RelayCell"><tt class="xref py py-class docutils literal"><span class="pre">cell.relay.RelayCell</span></tt></a></p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">Not Implemented</p>
+</div>
+</dd></dl>
+
+<dl class="class">
+<dt id="cell.relay.RelayExtendCell">
+<em class="property">class </em><tt class="descclassname">cell.relay.</tt><tt class="descname">RelayExtendCell</tt><big>(</big><em>header</em><big>)</big><a class="reference internal" href="../../_modules/cell/relay.html#RelayExtendCell"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.relay.RelayExtendCell" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#cell.relay.RelayCell" title="cell.relay.RelayCell"><tt class="xref py py-class docutils literal"><span class="pre">cell.relay.RelayCell</span></tt></a></p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">Not Implemented</p>
+</div>
+</dd></dl>
+
+<dl class="class">
+<dt id="cell.relay.RelayResolvedCell">
+<em class="property">class </em><tt class="descclassname">cell.relay.</tt><tt class="descname">RelayResolvedCell</tt><big>(</big><em>header</em><big>)</big><a class="reference internal" href="../../_modules/cell/relay.html#RelayResolvedCell"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.relay.RelayResolvedCell" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#cell.relay.RelayCell" title="cell.relay.RelayCell"><tt class="xref py py-class docutils literal"><span class="pre">cell.relay.RelayCell</span></tt></a></p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">Not Implemented</p>
+</div>
+</dd></dl>
+
+<dl class="class">
+<dt id="cell.relay.RelayResolveCell">
+<em class="property">class </em><tt class="descclassname">cell.relay.</tt><tt class="descname">RelayResolveCell</tt><big>(</big><em>header</em><big>)</big><a class="reference internal" href="../../_modules/cell/relay.html#RelayResolveCell"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.relay.RelayResolveCell" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#cell.relay.RelayCell" title="cell.relay.RelayCell"><tt class="xref py py-class docutils literal"><span class="pre">cell.relay.RelayCell</span></tt></a></p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">Not Implemented</p>
+</div>
+</dd></dl>
+
+<dl class="class">
+<dt id="cell.relay.RelaySendMeCell">
+<em class="property">class </em><tt class="descclassname">cell.relay.</tt><tt class="descname">RelaySendMeCell</tt><big>(</big><em>header</em>, <em>rheader=None</em>, <em>rpayload=''</em><big>)</big><a class="reference internal" href="../../_modules/cell/relay.html#RelaySendMeCell"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.relay.RelaySendMeCell" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#cell.relay.RelayCell" title="cell.relay.RelayCell"><tt class="xref py py-class docutils literal"><span class="pre">cell.relay.RelayCell</span></tt></a></p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">tor-spec, Section 7.3, 7.4</p>
+</div>
+<dl class="staticmethod">
+<dt id="cell.relay.RelaySendMeCell.make">
+<em class="property">static </em><tt class="descname">make</tt><big>(</big><em>circ_id</em>, <em>stream_id=0</em>, <em>link_version=3</em><big>)</big><a class="reference internal" href="../../_modules/cell/relay.html#RelaySendMeCell.make"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.relay.RelaySendMeCell.make" title="Permalink to this definition">¶</a></dt>
+<dd><p>Construct and return a RelaySendMeCell, using default values
+where possible.</p>
+<p>Create a FixedLenCell.Header and a RelayCell.RelayHeader for use
+in this cell.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>circ_id</strong> (<em>int</em>) &#8211; Circuit ID to use in this cell</li>
+<li><strong>stream_id</strong> (<em>int</em>) &#8211; Stream ID to use in this cell. A Stream ID of
+zero indicates a &#8216;circuit-level&#8217; SendMe cell, and a non-zero
+Stream ID indicates a &#8216;stream-level&#8217; SendMe cell.</li>
+<li><strong>link_version</strong> (<em>int</em>) &#8211; Link Protocol version in use</li>
+</ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first last"><tt class="xref py py-class docutils literal"><span class="pre">RelaySendMeCell</span></tt></p>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="cell.relay.RelayTruncatedCell">
+<em class="property">class </em><tt class="descclassname">cell.relay.</tt><tt class="descname">RelayTruncatedCell</tt><big>(</big><em>header</em>, <em>rheader=None</em>, <em>reason=None</em><big>)</big><a class="reference internal" href="../../_modules/cell/relay.html#RelayTruncatedCell"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.relay.RelayTruncatedCell" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#cell.relay.RelayCell" title="cell.relay.RelayCell"><tt class="xref py py-class docutils literal"><span class="pre">cell.relay.RelayCell</span></tt></a></p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">tor-spec, Section 5.4</p>
+</div>
+<dl class="method">
+<dt id="cell.relay.RelayTruncatedCell.getBytes">
+<tt class="descname">getBytes</tt><big>(</big><em>trimmed=False</em><big>)</big><a class="reference internal" href="../../_modules/cell/relay.html#RelayTruncatedCell.getBytes"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.relay.RelayTruncatedCell.getBytes" title="Permalink to this definition">¶</a></dt>
+<dd><p>Build and return the raw byte string this cell represents.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>trimmed</strong> (<em>bool</em>) &#8211; if <strong>True</strong>, do not pad payload bytes</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><strong>str</strong> raw bytes this cell represents</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="cell.relay.RelayTruncateCell">
+<em class="property">class </em><tt class="descclassname">cell.relay.</tt><tt class="descname">RelayTruncateCell</tt><big>(</big><em>header</em>, <em>rheader=None</em>, <em>reason=None</em><big>)</big><a class="reference internal" href="../../_modules/cell/relay.html#RelayTruncateCell"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.relay.RelayTruncateCell" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#cell.relay.RelayCell" title="cell.relay.RelayCell"><tt class="xref py py-class docutils literal"><span class="pre">cell.relay.RelayCell</span></tt></a></p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">Not Implemented</p>
+</div>
+</dd></dl>
+
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="fixedlen.html"
+                        title="previous chapter">fixedlen</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="varlen.html"
+                        title="next chapter">varlen</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="../../_sources/docs/cell/relay.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="varlen.html" title="varlen"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="fixedlen.html" title="fixedlen"
+             >previous</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../../docs.html" >Documentation</a> &raquo;</li>
+          <li><a href="../cell.html" >cell</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

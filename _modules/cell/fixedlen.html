@@ -1,0 +1,694 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>cell.fixedlen &mdash; oppy 0.1 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <link rel="top" title="oppy 0.1 documentation" href="../../index.html" />
+    <link rel="up" title="Module code" href="../index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for cell.fixedlen</h1><div class="highlight"><pre>
+<span class="c"># Copyright 2014, 2015, Nik Kinkel and David Johnston</span>
+<span class="c"># See LICENSE for licensing information</span>
+
+<span class="kn">import</span> <span class="nn">struct</span>
+<span class="kn">import</span> <span class="nn">time</span>
+
+<span class="kn">from</span> <span class="nn">oppy.cell.cell</span> <span class="kn">import</span> <span class="n">Cell</span>
+<span class="kn">import</span> <span class="nn">oppy.cell.definitions</span> <span class="kn">as</span> <span class="nn">DEF</span>
+
+<span class="kn">from</span> <span class="nn">oppy.cell.exceptions</span> <span class="kn">import</span> <span class="n">BadCellHeader</span><span class="p">,</span> <span class="n">BadPayloadData</span>
+<span class="kn">from</span> <span class="nn">oppy.cell.util</span> <span class="kn">import</span> <span class="n">TLVTriple</span>
+
+
+<div class="viewcode-block" id="FixedLenCell"><a class="viewcode-back" href="../../docs/cell/fixedlen.html#cell.fixedlen.FixedLenCell">[docs]</a><span class="k">class</span> <span class="nc">FixedLenCell</span><span class="p">(</span><span class="n">Cell</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;A container class for representing fixed-length cells.&#39;&#39;&#39;</span>
+
+    <span class="n">_subclass_map</span> <span class="o">=</span> <span class="bp">None</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">header</span><span class="p">,</span> <span class="n">payload</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Create a :class:`~oppy.cell.fixedlen.FixedLenCell` with the</span>
+<span class="sd">        using *header*.</span>
+
+<span class="sd">        :param :class:`oppy.cell.fixedlen.FixedLenCell.Header` header: The</span>
+<span class="sd">            cell header information to be used.</span>
+<span class="sd">        :param str payload: Cell payload to be used.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">header</span><span class="p">,</span> <span class="n">FixedLenCell</span><span class="o">.</span><span class="n">Header</span><span class="p">):</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&#39;Expected cell header type FixedLenCell.Header, but &#39;</span>
+            <span class="n">msg</span> <span class="o">+=</span> <span class="s">&#39;received header of type: {}&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">header</span><span class="p">))</span>
+            <span class="k">raise</span> <span class="n">BadCellHeader</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">header</span> <span class="o">=</span> <span class="n">header</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">payload</span> <span class="o">=</span> <span class="n">payload</span>
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="FixedLenCell.padCellBytes"><a class="viewcode-back" href="../../docs/cell/fixedlen.html#cell.fixedlen.FixedLenCell.padCellBytes">[docs]</a>    <span class="k">def</span> <span class="nf">padCellBytes</span><span class="p">(</span><span class="n">cell_bytes</span><span class="p">,</span> <span class="n">link_version</span><span class="o">=</span><span class="mi">3</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Pad cell_bytes to uniform length.</span>
+
+<span class="sd">        Length depends on the Link Protocol version in use.</span>
+
+<span class="sd">        :param str cell_bytes: byte string to pad</span>
+<span class="sd">        :param int link_version: Link Protocol version in use</span>
+<span class="sd">        :returns: **str** cell_bytes padded to a fixed-length</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">PAD_BYTE</span> <span class="o">=</span> <span class="s">&#39;</span><span class="se">\x00</span><span class="s">&#39;</span>
+        <span class="k">if</span> <span class="n">link_version</span> <span class="o">&lt;=</span> <span class="mi">3</span><span class="p">:</span>
+            <span class="n">pad_len</span> <span class="o">=</span> <span class="n">DEF</span><span class="o">.</span><span class="n">FIXED_LEN_V3_LEN</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">pad_len</span> <span class="o">=</span> <span class="n">DEF</span><span class="o">.</span><span class="n">FIXED_LEN_V4_LEN</span>
+        <span class="k">return</span> <span class="n">cell_bytes</span> <span class="o">+</span> <span class="n">PAD_BYTE</span> <span class="o">*</span> <span class="p">(</span><span class="n">pad_len</span> <span class="o">-</span> <span class="nb">len</span><span class="p">(</span><span class="n">cell_bytes</span><span class="p">))</span>
+</div>
+<div class="viewcode-block" id="FixedLenCell.getBytes"><a class="viewcode-back" href="../../docs/cell/fixedlen.html#cell.fixedlen.FixedLenCell.getBytes">[docs]</a>    <span class="k">def</span> <span class="nf">getBytes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">trimmed</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Build and return the raw bytes this cell represents.</span>
+
+<span class="sd">        :param bool trimmed: ignored</span>
+<span class="sd">        :returns: **str** byte representation of this cell.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">getBytes</span><span class="p">()</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">payload</span>
+</div>
+<div class="viewcode-block" id="FixedLenCell.payloadRange"><a class="viewcode-back" href="../../docs/cell/fixedlen.html#cell.fixedlen.FixedLenCell.payloadRange">[docs]</a>    <span class="k">def</span> <span class="nf">payloadRange</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Return a two-tuple representing the (start, end) positions of this</span>
+<span class="sd">        cell&#39;s payload data (based on Link Protocol version in use).</span>
+
+<span class="sd">        :returns: **tuple, int** (start, end) indices of payload.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">if</span> <span class="mi">1</span> <span class="o">&lt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">link_version</span> <span class="o">&lt;=</span> <span class="mi">3</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">DEF</span><span class="o">.</span><span class="n">PAYLOAD_START_V3</span><span class="p">,</span> <span class="n">DEF</span><span class="o">.</span><span class="n">FIXED_LEN_V3_LEN</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">link_version</span> <span class="o">&lt;=</span> <span class="mi">4</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">DEF</span><span class="o">.</span><span class="n">PAYLOAD_START_V4</span><span class="p">,</span> <span class="n">DEF</span><span class="o">.</span><span class="n">FIXED_LEN_V4_LEN</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">fmt</span> <span class="o">=</span> <span class="s">&quot;The cell&#39;s link version is invalid: {}&quot;</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">fmt</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">link_version</span><span class="p">))</span>
+</div>
+    <span class="k">def</span> <span class="nf">_parseHeader</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="c"># This check is only useful for debugging purposes. For fixed-length</span>
+        <span class="c"># cells, this method actually doesn&#39;t need to do anything, because</span>
+        <span class="c"># all header fields have already been parsed.</span>
+        <span class="n">already_parsed</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">circ_id</span><span class="p">,</span>
+                          <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">cmd</span><span class="p">,</span>
+                          <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">link_version</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">field</span> <span class="ow">in</span> <span class="n">already_parsed</span><span class="p">:</span>
+            <span class="k">assert</span> <span class="n">field</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span>
+
+    <span class="k">def</span> <span class="nf">_parsePayload</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="n">start</span><span class="p">,</span> <span class="n">end</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">payloadRange</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">payload</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">start</span><span class="p">:</span><span class="n">end</span><span class="p">]</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">_initSubclassMap</span><span class="p">():</span>
+        <span class="n">FixedLenCell</span><span class="o">.</span><span class="n">_subclass_map</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">DEF</span><span class="o">.</span><span class="n">PADDING_CMD</span>     <span class="p">:</span>   <span class="n">PaddingCell</span><span class="p">,</span>
+            <span class="n">DEF</span><span class="o">.</span><span class="n">CREATE_CMD</span>      <span class="p">:</span>   <span class="n">CreateCell</span><span class="p">,</span>
+            <span class="n">DEF</span><span class="o">.</span><span class="n">CREATED_CMD</span>     <span class="p">:</span>   <span class="n">CreatedCell</span><span class="p">,</span>
+            <span class="n">DEF</span><span class="o">.</span><span class="n">RELAY_CMD</span>       <span class="p">:</span>   <span class="n">EncryptedCell</span><span class="p">,</span>
+            <span class="n">DEF</span><span class="o">.</span><span class="n">DESTROY_CMD</span>     <span class="p">:</span>   <span class="n">DestroyCell</span><span class="p">,</span>
+            <span class="n">DEF</span><span class="o">.</span><span class="n">CREATE_FAST_CMD</span> <span class="p">:</span>   <span class="n">CreateFastCell</span><span class="p">,</span>
+            <span class="n">DEF</span><span class="o">.</span><span class="n">CREATED_FAST_CMD</span><span class="p">:</span>   <span class="n">CreatedFastCell</span><span class="p">,</span>
+            <span class="n">DEF</span><span class="o">.</span><span class="n">NETINFO_CMD</span>     <span class="p">:</span>   <span class="n">NetInfoCell</span><span class="p">,</span>
+            <span class="n">DEF</span><span class="o">.</span><span class="n">RELAY_EARLY_CMD</span> <span class="p">:</span>   <span class="n">EncryptedCell</span><span class="p">,</span>
+            <span class="n">DEF</span><span class="o">.</span><span class="n">CREATE2_CMD</span>     <span class="p">:</span>   <span class="n">Create2Cell</span><span class="p">,</span>
+            <span class="n">DEF</span><span class="o">.</span><span class="n">CREATED2_CMD</span>    <span class="p">:</span>   <span class="n">Created2Cell</span>
+        <span class="p">}</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">_extractCmd</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">header</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">header</span><span class="o">.</span><span class="n">cmd</span>
+
+<div class="viewcode-block" id="FixedLenCell.Header"><a class="viewcode-back" href="../../docs/cell/fixedlen.html#cell.fixedlen.FixedLenCell.Header">[docs]</a>    <span class="k">class</span> <span class="nc">Header</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;A simple container class for representing the header information of</span>
+<span class="sd">        a fixed-length cell.&#39;&#39;&#39;</span>
+
+        <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">circ_id</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">cmd</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">link_version</span><span class="o">=</span><span class="mi">3</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">circ_id</span> <span class="o">=</span> <span class="n">circ_id</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">cmd</span> <span class="o">=</span> <span class="n">cmd</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">link_version</span> <span class="o">=</span> <span class="n">link_version</span>
+
+<div class="viewcode-block" id="FixedLenCell.Header.getBytes"><a class="viewcode-back" href="../../docs/cell/fixedlen.html#cell.fixedlen.FixedLenCell.Header.getBytes">[docs]</a>        <span class="k">def</span> <span class="nf">getBytes</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+            <span class="sd">&#39;&#39;&#39;Return the raw bytes of this header.</span>
+
+<span class="sd">            :returns: **str** byte representation of this header</span>
+<span class="sd">            &#39;&#39;&#39;</span>
+            <span class="n">fmt</span> <span class="o">=</span> <span class="s">&quot;!HB&quot;</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">link_version</span> <span class="o">&lt;=</span> <span class="mi">3</span> <span class="k">else</span> <span class="s">&quot;!IB&quot;</span>
+            <span class="k">return</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="n">fmt</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">circ_id</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">cmd</span><span class="p">)</span>
+</div>
+        <span class="k">def</span> <span class="nf">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+            <span class="n">fmt</span> <span class="o">=</span> <span class="s">&quot;FixedLenCell.Header(circ_id={}, cmd={}, link_version={})&quot;</span>
+            <span class="k">return</span> <span class="n">fmt</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">circ_id</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">cmd</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">link_version</span><span class="p">)</span>
+
+</div></div>
+<span class="n">HTYPE_LEN</span> <span class="o">=</span> <span class="mi">2</span>
+<span class="n">HLEN_LEN</span>  <span class="o">=</span> <span class="mi">2</span>
+
+
+<div class="viewcode-block" id="Create2Cell"><a class="viewcode-back" href="../../docs/cell/fixedlen.html#cell.fixedlen.Create2Cell">[docs]</a><span class="k">class</span> <span class="nc">Create2Cell</span><span class="p">(</span><span class="n">FixedLenCell</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;.. note:: tor-spec, Section 5.1&#39;&#39;&#39;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">header</span><span class="p">,</span> <span class="n">htype</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">hlen</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">hdata</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        :param :class:`~oppy.cell.fixedlen.FixedLenCell.Header` header:</span>
+<span class="sd">            initialized header to use with this cell</span>
+<span class="sd">        :param int htype: Handshake type in use</span>
+<span class="sd">        :param int hlen: Length of the handshake data</span>
+<span class="sd">        :param str hdata: Actual handshake data to use (onion skin)</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">header</span> <span class="o">=</span> <span class="n">header</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">htype</span> <span class="o">=</span> <span class="n">htype</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">hlen</span> <span class="o">=</span> <span class="n">hlen</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">hdata</span> <span class="o">=</span> <span class="n">hdata</span>
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="Create2Cell.make"><a class="viewcode-back" href="../../docs/cell/fixedlen.html#cell.fixedlen.Create2Cell.make">[docs]</a>    <span class="k">def</span> <span class="nf">make</span><span class="p">(</span><span class="n">circ_id</span><span class="p">,</span> <span class="n">htype</span><span class="o">=</span><span class="n">DEF</span><span class="o">.</span><span class="n">NTOR_HTYPE</span><span class="p">,</span> <span class="n">hlen</span><span class="o">=</span><span class="n">DEF</span><span class="o">.</span><span class="n">NTOR_HLEN</span><span class="p">,</span> <span class="n">hdata</span><span class="o">=</span><span class="s">&#39;&#39;</span><span class="p">,</span>
+             <span class="n">link_version</span><span class="o">=</span><span class="mi">3</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Build and return a Create2 cell, using default values where</span>
+<span class="sd">        possible.</span>
+
+<span class="sd">        Automatically create and use an appropriate FixedLenCell.Header.</span>
+
+<span class="sd">        .. note: oppy only supports the NTor handshake, so *make()* will</span>
+<span class="sd">            currently reject any *htype*&#39;s or *hlen*&#39;s that are not</span>
+<span class="sd">            recognized as used in the NTor handshake.</span>
+
+<span class="sd">        :param int circ_id: Circuit ID to use for this cell</span>
+<span class="sd">        :param int hlen: Length of **hdata** segment</span>
+<span class="sd">        :param str hdata: Actual handshake data to use (an *onion skin*)</span>
+<span class="sd">        :param int link_version: Link Protocol version in use</span>
+<span class="sd">        :returns: :class:`~oppy.cell.fixedlen.Create2Cell`</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">if</span> <span class="n">htype</span> <span class="o">!=</span> <span class="n">DEF</span><span class="o">.</span><span class="n">NTOR_HTYPE</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&#39;`htype` was {}, but we currently only can do &#39;</span>
+            <span class="n">msg</span> <span class="o">+=</span> <span class="s">&#39;{} (NTor)&#39;</span>
+            <span class="k">raise</span> <span class="n">BadPayloadData</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">htype</span><span class="p">,</span> <span class="n">DEF</span><span class="o">.</span><span class="n">NTOR_HTYPE</span><span class="p">))</span>
+
+        <span class="k">if</span> <span class="n">hlen</span> <span class="o">!=</span> <span class="n">DEF</span><span class="o">.</span><span class="n">NTOR_HLEN</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&#39;`htype` was NTor but hlen was {}, expected {}.&#39;</span>
+            <span class="k">raise</span> <span class="n">BadPayloadData</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">hlen</span><span class="p">,</span> <span class="n">DEF</span><span class="o">.</span><span class="n">NTOR_HLEN</span><span class="p">))</span>
+
+        <span class="k">if</span> <span class="n">hlen</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">hdata</span><span class="p">):</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&#39;`hlen` was {}, but `len(hdata)` was {}.&#39;</span>
+            <span class="k">raise</span> <span class="n">BadPayloadData</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">hlen</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">hdata</span><span class="p">)))</span>
+
+        <span class="n">h</span> <span class="o">=</span> <span class="n">FixedLenCell</span><span class="o">.</span><span class="n">Header</span><span class="p">(</span><span class="n">circ_id</span><span class="o">=</span><span class="n">circ_id</span><span class="p">,</span>
+                                <span class="n">cmd</span><span class="o">=</span><span class="n">DEF</span><span class="o">.</span><span class="n">CREATE2_CMD</span><span class="p">,</span>
+                                <span class="n">link_version</span><span class="o">=</span><span class="n">link_version</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">Create2Cell</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="n">htype</span><span class="o">=</span><span class="n">htype</span><span class="p">,</span> <span class="n">hlen</span><span class="o">=</span><span class="n">hlen</span><span class="p">,</span> <span class="n">hdata</span><span class="o">=</span><span class="n">hdata</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Create2Cell.getBytes"><a class="viewcode-back" href="../../docs/cell/fixedlen.html#cell.fixedlen.Create2Cell.getBytes">[docs]</a>    <span class="k">def</span> <span class="nf">getBytes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">trimmed</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Construct and return the byte string represented by this cell.</span>
+
+<span class="sd">        :param bool trimmed: If **True**, return just the cell bytes with no</span>
+<span class="sd">            padding.  Otherwise, pad cell bytes out to fixed-length size</span>
+<span class="sd">            according to Link Protocol version in use.</span>
+<span class="sd">        :returns: **str** formatted byte string represented by this cell</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">ret</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">getBytes</span><span class="p">()</span>
+        <span class="n">ret</span> <span class="o">+=</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;!H&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">htype</span><span class="p">)</span> <span class="o">+</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;!H&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">hlen</span><span class="p">)</span>
+        <span class="n">ret</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hdata</span>
+        <span class="k">if</span> <span class="n">trimmed</span> <span class="ow">is</span> <span class="bp">True</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">ret</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">FixedLenCell</span><span class="o">.</span><span class="n">padCellBytes</span><span class="p">(</span><span class="n">ret</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">link_version</span><span class="p">)</span>
+</div>
+    <span class="k">def</span> <span class="nf">_parsePayload</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Parse the string *data* and extract cell fields.</span>
+
+<span class="sd">        Set this cell&#39;s attributes from extracted values.</span>
+
+<span class="sd">        :param str data: string to parse</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">start</span><span class="p">,</span> <span class="n">end</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">payloadRange</span><span class="p">()</span>
+        <span class="n">offset</span> <span class="o">=</span> <span class="n">start</span>
+
+        <span class="k">if</span> <span class="n">end</span> <span class="o">-</span> <span class="n">start</span> <span class="o">&lt;</span> <span class="n">HTYPE_LEN</span> <span class="o">+</span> <span class="n">HLEN_LEN</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Create2Cell payload was not enough bytes to construct &quot;</span>
+            <span class="n">msg</span> <span class="o">+=</span> <span class="s">&quot;a valid Create2Cell.&quot;</span>
+            <span class="k">raise</span> <span class="n">BadPayloadData</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">htype</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">unpack</span><span class="p">(</span><span class="s">&#39;!H&#39;</span><span class="p">,</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span><span class="p">:</span><span class="n">offset</span> <span class="o">+</span> <span class="n">HTYPE_LEN</span><span class="p">])[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">offset</span> <span class="o">+=</span> <span class="n">HTYPE_LEN</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">hlen</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">unpack</span><span class="p">(</span><span class="s">&#39;!H&#39;</span><span class="p">,</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span><span class="p">:</span><span class="n">offset</span> <span class="o">+</span> <span class="n">HLEN_LEN</span><span class="p">])[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">offset</span> <span class="o">+=</span> <span class="n">HLEN_LEN</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">hdata</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span><span class="p">:</span><span class="n">offset</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">hlen</span><span class="p">]</span>
+        <span class="k">except</span> <span class="ne">IndexError</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Create2Cell hlen was specified to be {} bytes, but actual &quot;</span>
+            <span class="n">msg</span> <span class="o">+=</span> <span class="s">&quot;but hdata was {} bytes.&quot;</span>
+            <span class="k">raise</span> <span class="n">BadPayloadData</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hlen</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span> <span class="o">-</span> <span class="n">offset</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">fmt</span> <span class="o">=</span> <span class="s">&#39;{}, htype={}, hlen={}, hdata={}&#39;</span>
+        <span class="n">fmt</span> <span class="o">=</span> <span class="s">&#39;Create2Cell({})&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">fmt</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">fmt</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="p">),</span> <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">htype</span><span class="p">),</span>
+                          <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hlen</span><span class="p">),</span> <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hdata</span><span class="p">))</span>
+
+</div>
+<div class="viewcode-block" id="Created2Cell"><a class="viewcode-back" href="../../docs/cell/fixedlen.html#cell.fixedlen.Created2Cell">[docs]</a><span class="k">class</span> <span class="nc">Created2Cell</span><span class="p">(</span><span class="n">FixedLenCell</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;.. note:: tor-spec, Section 5.1&#39;&#39;&#39;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">header</span><span class="p">,</span> <span class="n">hlen</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">hdata</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        :param :class:`~oppy.cell.fixedlen.FixedLenCell.Header` header:</span>
+<span class="sd">            Initialized header to use in this cell.</span>
+<span class="sd">        :param int hlen: Length of this cell&#39;s hdata field</span>
+<span class="sd">        :param str hdata: Actual handshake data (*onion skin*)</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">header</span> <span class="o">=</span> <span class="n">header</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">hlen</span> <span class="o">=</span> <span class="n">hlen</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">hdata</span> <span class="o">=</span> <span class="n">hdata</span>
+
+<div class="viewcode-block" id="Created2Cell.getBytes"><a class="viewcode-back" href="../../docs/cell/fixedlen.html#cell.fixedlen.Created2Cell.getBytes">[docs]</a>    <span class="k">def</span> <span class="nf">getBytes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">trimmed</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Construct and return the byte string represented by this cell.</span>
+
+<span class="sd">        :param bool trimmed: If **True**, return just the bytes without</span>
+<span class="sd">            padding. Otherwise, pad length out to fixed-length cell size</span>
+<span class="sd">            according to Link Protocol version in use.</span>
+<span class="sd">        :returns: **str** raw byte string this cell represents.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">ret</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">getBytes</span><span class="p">()</span>
+        <span class="n">ret</span> <span class="o">+=</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;!H&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">hlen</span><span class="p">)</span>
+        <span class="n">ret</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">hdata</span>
+        <span class="k">if</span> <span class="n">trimmed</span> <span class="ow">is</span> <span class="bp">True</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">ret</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">FixedLenCell</span><span class="o">.</span><span class="n">padCellBytes</span><span class="p">(</span><span class="n">ret</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">link_version</span><span class="p">)</span>
+</div>
+    <span class="k">def</span> <span class="nf">_parsePayload</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Parse the string *data* and extract cell fields.</span>
+
+<span class="sd">        Set the attributes of this cell.</span>
+
+<span class="sd">        :param str data: string to parse</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">start</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">payloadRange</span><span class="p">()</span>
+        <span class="n">offset</span> <span class="o">=</span> <span class="n">start</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">hlen</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">unpack</span><span class="p">(</span><span class="s">&#39;!H&#39;</span><span class="p">,</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span><span class="p">:</span><span class="n">offset</span> <span class="o">+</span> <span class="n">HLEN_LEN</span><span class="p">])[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">offset</span> <span class="o">+=</span> <span class="n">HLEN_LEN</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">hdata</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span><span class="p">:</span><span class="n">offset</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">hlen</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">fmt</span> <span class="o">=</span> <span class="s">&#39;{}, hlen={}, hdata={}&#39;</span>
+        <span class="n">fmt</span> <span class="o">=</span> <span class="s">&#39;Created2Cell({})&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">fmt</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">fmt</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="p">),</span> <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hlen</span><span class="p">),</span>
+                          <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">hdata</span><span class="p">))</span>
+
+</div>
+<div class="viewcode-block" id="CreatedFastCell"><a class="viewcode-back" href="../../docs/cell/fixedlen.html#cell.fixedlen.CreatedFastCell">[docs]</a><span class="k">class</span> <span class="nc">CreatedFastCell</span><span class="p">(</span><span class="n">FixedLenCell</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;.. note:: Not Implemented.&#39;&#39;&#39;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">header</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s">&quot;Can&#39;t make CreatedFastCell yet.&quot;</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="CreatedCell"><a class="viewcode-back" href="../../docs/cell/fixedlen.html#cell.fixedlen.CreatedCell">[docs]</a><span class="k">class</span> <span class="nc">CreatedCell</span><span class="p">(</span><span class="n">FixedLenCell</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;.. note:: Not Implemented.&#39;&#39;&#39;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">header</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s">&quot;Can&#39;t make CreatedCell yet.&quot;</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="CreateFastCell"><a class="viewcode-back" href="../../docs/cell/fixedlen.html#cell.fixedlen.CreateFastCell">[docs]</a><span class="k">class</span> <span class="nc">CreateFastCell</span><span class="p">(</span><span class="n">FixedLenCell</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;.. note:: Not Implemented.&#39;&#39;&#39;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">header</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s">&quot;Can&#39;t make CreateFastCell yet.&quot;</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="CreateCell"><a class="viewcode-back" href="../../docs/cell/fixedlen.html#cell.fixedlen.CreateCell">[docs]</a><span class="k">class</span> <span class="nc">CreateCell</span><span class="p">(</span><span class="n">FixedLenCell</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;.. note:: Not Implemented.&#39;&#39;&#39;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">header</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s">&quot;Can&#39;t make CreateCell yet.&quot;</span><span class="p">)</span>
+
+</div>
+<span class="n">REASON_LEN</span> <span class="o">=</span> <span class="mi">1</span>
+
+
+<div class="viewcode-block" id="DestroyCell"><a class="viewcode-back" href="../../docs/cell/fixedlen.html#cell.fixedlen.DestroyCell">[docs]</a><span class="k">class</span> <span class="nc">DestroyCell</span><span class="p">(</span><span class="n">FixedLenCell</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;.. note:: tor-spec, Section 5.4&#39;&#39;&#39;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">header</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        :param :class:`~oppy.cell.fixedlen.FixedLenCell.Header` header:</span>
+<span class="sd">            Initialized header to use in this cell</span>
+<span class="sd">        :param int reason: Reason this DestroyCell was being sent.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">header</span> <span class="o">=</span> <span class="n">header</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">reason</span> <span class="o">=</span> <span class="n">reason</span>
+
+    <span class="c"># DESTROY_NONE should always be sent forward to avoid leaking version</span>
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="DestroyCell.make"><a class="viewcode-back" href="../../docs/cell/fixedlen.html#cell.fixedlen.DestroyCell.make">[docs]</a>    <span class="k">def</span> <span class="nf">make</span><span class="p">(</span><span class="n">circ_id</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="n">DEF</span><span class="o">.</span><span class="n">DESTROY_NONE</span><span class="p">,</span> <span class="n">link_version</span><span class="o">=</span><span class="mi">3</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Build and return a Destroy cell, using default values where</span>
+<span class="sd">        possible.</span>
+
+<span class="sd">        Automatically create and use an appropriate FixedLenCell.Header.</span>
+
+<span class="sd">        .. warning: reason 0 (DESTROY_NONE in oppy.cell.definitions)</span>
+<span class="sd">            should always be sent forward to avoid leaking version</span>
+<span class="sd">            information.</span>
+
+<span class="sd">        :param int circ_id: Circuit ID to use for this cell</span>
+<span class="sd">        :param int reason: Reason this DESTROY cell is being sent</span>
+<span class="sd">        :param int link_version: Link Protocol version in use</span>
+<span class="sd">        :returns: :class:`~oppy.cell.fixedlen.DestroyCell`</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">h</span> <span class="o">=</span> <span class="n">FixedLenCell</span><span class="o">.</span><span class="n">Header</span><span class="p">(</span><span class="n">circ_id</span><span class="o">=</span><span class="n">circ_id</span><span class="p">,</span>
+                                <span class="n">cmd</span><span class="o">=</span><span class="n">DEF</span><span class="o">.</span><span class="n">DESTROY_CMD</span><span class="p">,</span>
+                                <span class="n">link_version</span><span class="o">=</span><span class="n">link_version</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">reason</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">DEF</span><span class="o">.</span><span class="n">DESTROY_TRUNCATE_REASONS</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&#39;Unrecognized DESTROY reason: {}&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">reason</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="n">BadPayloadData</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">DestroyCell</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="n">reason</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="DestroyCell.getBytes"><a class="viewcode-back" href="../../docs/cell/fixedlen.html#cell.fixedlen.DestroyCell.getBytes">[docs]</a>    <span class="k">def</span> <span class="nf">getBytes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">trimmed</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Construct and return the byte string represented by this cell.</span>
+
+<span class="sd">        :param bool trimmed: If **True**, return just the bytes without</span>
+<span class="sd">            padding. Otherwise, pad length out to fixed-length cell size</span>
+<span class="sd">            according to Link Protocol version in use.</span>
+<span class="sd">        :returns: **str** raw byte string this cell represents</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">ret</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">getBytes</span><span class="p">()</span>
+        <span class="n">ret</span> <span class="o">+=</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;!B&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">reason</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">trimmed</span> <span class="ow">is</span> <span class="bp">True</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">ret</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">FixedLenCell</span><span class="o">.</span><span class="n">padCellBytes</span><span class="p">(</span><span class="n">ret</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">link_version</span><span class="p">)</span>
+</div>
+    <span class="k">def</span> <span class="nf">_parsePayload</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Parse the string *data* and extract cell fields.</span>
+
+<span class="sd">        Set this cell&#39;s attributes.</span>
+
+<span class="sd">        :param str data: string to parse</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">start</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">payloadRange</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">reason</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">unpack</span><span class="p">(</span><span class="s">&#39;!B&#39;</span><span class="p">,</span> <span class="n">data</span><span class="p">[</span><span class="n">start</span><span class="p">:</span><span class="n">start</span> <span class="o">+</span> <span class="n">REASON_LEN</span><span class="p">])[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">fmt</span> <span class="o">=</span> <span class="s">&#39;{}, reason={}&#39;</span>
+        <span class="n">fmt</span> <span class="o">=</span> <span class="s">&#39;DestroyCell({})&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">fmt</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">fmt</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="p">),</span> <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">reason</span><span class="p">))</span>
+
+</div>
+<div class="viewcode-block" id="EncryptedCell"><a class="viewcode-back" href="../../docs/cell/fixedlen.html#cell.fixedlen.EncryptedCell">[docs]</a><span class="k">class</span> <span class="nc">EncryptedCell</span><span class="p">(</span><span class="n">FixedLenCell</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    .. note::</span>
+<span class="sd">        EncryptedCell is not a defined cell type in tor-spec, but</span>
+<span class="sd">        we use it as a convenient way to represent RELAY cells or</span>
+<span class="sd">        RELAY_EARLY cells that have either been encrypted by oppy or</span>
+<span class="sd">        received from the network and have not been decrypted yet.</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">header</span><span class="p">,</span> <span class="n">enc_payload</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        :param :class:`~oppy.cell.fixedlen.FixedLenCell.Header` header:</span>
+<span class="sd">            header to use with this cell</span>
+<span class="sd">        :param str enc_payload: encrypted payload for use with this cell</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">header</span> <span class="o">=</span> <span class="n">header</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">enc_payload</span> <span class="o">=</span> <span class="n">enc_payload</span>
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="EncryptedCell.make"><a class="viewcode-back" href="../../docs/cell/fixedlen.html#cell.fixedlen.EncryptedCell.make">[docs]</a>    <span class="k">def</span> <span class="nf">make</span><span class="p">(</span><span class="n">circ_id</span><span class="p">,</span> <span class="n">payload</span><span class="p">,</span> <span class="n">link_version</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">early</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Build and return a Destroy cell, using default values where</span>
+<span class="sd">        possible.</span>
+
+<span class="sd">        Automatically create and use an appropriate FixedLenCell.Header. The</span>
+<span class="sd">        *early* parameter specifies whether we should send a RELAY cell or</span>
+<span class="sd">        a RELAY_EARLY cell.</span>
+
+<span class="sd">        .. warning::</span>
+
+<span class="sd">            RELAY_EARLY cells should always be used during circuit creation</span>
+<span class="sd">            to avoid certain classes of attacks. That is, whenever oppy</span>
+<span class="sd">            sends a relay EXTEND2 cell, it would be sent as a RELAY_EARLY</span>
+<span class="sd">            cell instead of a RELAY cell.</span>
+
+<span class="sd">            Reference: tor-spec, Section 5.6</span>
+
+<span class="sd">        .. note: *payload* field should be fully padded and equal to</span>
+<span class="sd">            maximum relay cell payload length (498).</span>
+
+<span class="sd">        :param int circ_id: Circuit ID to use for this cell</span>
+<span class="sd">        :param str payload: Payload bytes to use in this cell</span>
+<span class="sd">        :param int link_version: Link Protocol version in use</span>
+<span class="sd">        :param bool early: Dictate whether or not to use a RELAY_EARLY cell</span>
+<span class="sd">        :returns: :class:`~oppy.cell.fixedlen.EncryptedCell`</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">payload</span><span class="p">)</span> <span class="o">!=</span> <span class="n">DEF</span><span class="o">.</span><span class="n">MAX_PAYLOAD_LEN</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&#39;EncryptedCell enc_payload should be padding to length {}; &#39;</span>
+            <span class="n">msg</span> <span class="o">+=</span> <span class="s">&#39;found enc_payload length {} instead.&#39;</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">DEF</span><span class="o">.</span><span class="n">FIXED_LEN_V3_LEN</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">payload</span><span class="p">))</span>
+            <span class="k">raise</span> <span class="n">BadPayloadData</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+        <span class="n">cmd</span> <span class="o">=</span> <span class="n">DEF</span><span class="o">.</span><span class="n">RELAY_EARLY_CMD</span> <span class="k">if</span> <span class="n">early</span> <span class="ow">is</span> <span class="bp">True</span> <span class="k">else</span> <span class="n">DEF</span><span class="o">.</span><span class="n">RELAY_CMD</span>
+
+        <span class="n">h</span> <span class="o">=</span> <span class="n">FixedLenCell</span><span class="o">.</span><span class="n">Header</span><span class="p">(</span><span class="n">circ_id</span><span class="o">=</span><span class="n">circ_id</span><span class="p">,</span> <span class="n">cmd</span><span class="o">=</span><span class="n">cmd</span><span class="p">,</span>
+                                <span class="n">link_version</span><span class="o">=</span><span class="n">link_version</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">EncryptedCell</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="n">enc_payload</span><span class="o">=</span><span class="n">payload</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="EncryptedCell.getBytes"><a class="viewcode-back" href="../../docs/cell/fixedlen.html#cell.fixedlen.EncryptedCell.getBytes">[docs]</a>    <span class="k">def</span> <span class="nf">getBytes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">trimmed</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Construct and return the byte string represented by this cell.</span>
+
+<span class="sd">        :param bool trimmed: ignored, encrypted cell&#39;s don&#39;t know anything</span>
+<span class="sd">            about their payload or its length</span>
+<span class="sd">        :returns: **str** raw byte string this cell represents</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">getBytes</span><span class="p">()</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">enc_payload</span>
+</div>
+    <span class="k">def</span> <span class="nf">_parsePayload</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Parse the string *data* and extract cell fields.</span>
+
+<span class="sd">        .. note::</span>
+
+<span class="sd">            EncryptedCell does not try to interpret the payload,</span>
+<span class="sd">            assuming that it is encrypted and unreadable and will be</span>
+<span class="sd">            decrypted and parsed somewhere else.</span>
+
+<span class="sd">        :param str data: string to parse</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">start</span><span class="p">,</span> <span class="n">end</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">payloadRange</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">enc_payload</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">start</span><span class="p">:</span><span class="n">end</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">fmt</span> <span class="o">=</span> <span class="s">&quot;EncryptedCell({}, enc_payload={})&quot;</span>
+        <span class="k">return</span> <span class="n">fmt</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="p">),</span> <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">enc_payload</span><span class="p">))</span>
+
+</div>
+<span class="n">TIMESTAMP_LEN</span>     <span class="o">=</span> <span class="mi">4</span>
+<span class="n">NUM_ADDRESSES_LEN</span> <span class="o">=</span> <span class="mi">1</span>
+
+
+<div class="viewcode-block" id="NetInfoCell"><a class="viewcode-back" href="../../docs/cell/fixedlen.html#cell.fixedlen.NetInfoCell">[docs]</a><span class="k">class</span> <span class="nc">NetInfoCell</span><span class="p">(</span><span class="n">FixedLenCell</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;.. note:: tor-spec.txt, Section 4.5&#39;&#39;&#39;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">header</span><span class="p">,</span> <span class="n">timestamp</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">other_or_address</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                 <span class="n">num_addresses</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">this_or_addresses</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        .. note: Addresses here are represented as type/length/value</span>
+<span class="sd">            structures, defined in :class:`~oppy.cell.util.TLVTriple`.</span>
+
+<span class="sd">            Reference: tor-spec.txt</span>
+<span class="sd">            Section: 6.4</span>
+
+<span class="sd">        :param :class:`~oppy.cell.fixedlen.FixedLenCell.Header` header:</span>
+<span class="sd">            header to use with this cell</span>
+<span class="sd">        :param str timestamp: Time this NetInfoCell was created. Big-endian</span>
+<span class="sd">            unsigned integer of seconds since the Unix epoch (in packed</span>
+<span class="sd">            byte format).</span>
+<span class="sd">        :param :class:`~oppy.cell.util.TLVTriple` other_or_address: Remote</span>
+<span class="sd">            address associated with this NetInfoCell. If we are the</span>
+<span class="sd">            initiator of this cell, this is the relay&#39;s address that we&#39;re</span>
+<span class="sd">            communicating with. If we are the recipient, this is our public</span>
+<span class="sd">            IP address.</span>
+<span class="sd">        :param int num_addresses: the number of this_or_addresses included</span>
+<span class="sd">            in this NetInfoCell.</span>
+<span class="sd">        :param list, `~oppy.cell.util.TLVTriple` this_or_addresses: List of</span>
+<span class="sd">            originating public IP addresses of this NetInfoCell.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">header</span> <span class="o">=</span> <span class="n">header</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">timestamp</span> <span class="o">=</span> <span class="n">timestamp</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">other_or_address</span> <span class="o">=</span> <span class="n">other_or_address</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">num_addresses</span> <span class="o">=</span> <span class="n">num_addresses</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">this_or_addresses</span> <span class="o">=</span> <span class="n">this_or_addresses</span>
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="NetInfoCell.make"><a class="viewcode-back" href="../../docs/cell/fixedlen.html#cell.fixedlen.NetInfoCell.make">[docs]</a>    <span class="k">def</span> <span class="nf">make</span><span class="p">(</span><span class="n">circ_id</span><span class="p">,</span> <span class="n">other_or_address</span><span class="p">,</span> <span class="n">this_or_addresses</span><span class="p">,</span> <span class="n">timestamp</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+             <span class="n">link_version</span><span class="o">=</span><span class="mi">3</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Build and return a Destroy cell, using default values where</span>
+<span class="sd">        possible.</span>
+
+<span class="sd">        Automatically create and use an appropriate FixedLenCell.Header.</span>
+
+<span class="sd">        :param int circ_id: Circuit ID to use for this cell</span>
+<span class="sd">        :param str timestamp: Time this `NetInfoCell` was created. Big-endian</span>
+<span class="sd">            unsigned integer of seconds since the Unix epoch (packed</span>
+<span class="sd">            format).</span>
+<span class="sd">        :param oppy.cell.util.TLVTriple other_or_address: Public IP</span>
+<span class="sd">            address of the recipient of this NetInfoCell.</span>
+<span class="sd">        :param list, oppy.cell.util.TLVTriple this_or_addresses: List</span>
+<span class="sd">            of the public IP address(es) of the originator of this</span>
+<span class="sd">            NetInfoCell.</span>
+<span class="sd">        :returns: :class:`~oppy.cell.fixedlen.NetInfoCell`</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">h</span> <span class="o">=</span> <span class="n">FixedLenCell</span><span class="o">.</span><span class="n">Header</span><span class="p">(</span><span class="n">circ_id</span><span class="o">=</span><span class="n">circ_id</span><span class="p">,</span>
+                                <span class="n">cmd</span><span class="o">=</span><span class="n">DEF</span><span class="o">.</span><span class="n">NETINFO_CMD</span><span class="p">,</span>
+                                <span class="n">link_version</span><span class="o">=</span><span class="n">link_version</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">timestamp</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">timestamp</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;!I&#39;</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()))</span>
+
+        <span class="k">return</span> <span class="n">NetInfoCell</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="n">timestamp</span><span class="o">=</span><span class="n">timestamp</span><span class="p">,</span>
+                           <span class="n">other_or_address</span><span class="o">=</span><span class="n">other_or_address</span><span class="p">,</span>
+                           <span class="n">num_addresses</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">this_or_addresses</span><span class="p">),</span>
+                           <span class="n">this_or_addresses</span><span class="o">=</span><span class="n">this_or_addresses</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="NetInfoCell.getBytes"><a class="viewcode-back" href="../../docs/cell/fixedlen.html#cell.fixedlen.NetInfoCell.getBytes">[docs]</a>    <span class="k">def</span> <span class="nf">getBytes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">trimmed</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Construct and return the byte string represented by this cell.</span>
+
+<span class="sd">        :param bool trimmed: Whether or not we should pad this cell&#39;s bytes.</span>
+<span class="sd">            If **True**, pad based on Link Protocol version in use.</span>
+<span class="sd">        :returns: **str** raw bytes this cell represents</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">ret</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">getBytes</span><span class="p">()</span>
+        <span class="n">ret</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">timestamp</span>
+        <span class="n">ret</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">other_or_address</span><span class="o">.</span><span class="n">getBytes</span><span class="p">()</span>
+        <span class="n">ret</span> <span class="o">+=</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;!B&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_addresses</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">TLVaddr</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">this_or_addresses</span><span class="p">:</span>
+            <span class="n">ret</span> <span class="o">+=</span> <span class="n">TLVaddr</span><span class="o">.</span><span class="n">getBytes</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">trimmed</span> <span class="ow">is</span> <span class="bp">True</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">ret</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">FixedLenCell</span><span class="o">.</span><span class="n">padCellBytes</span><span class="p">(</span><span class="n">ret</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">link_version</span><span class="p">)</span>
+</div>
+    <span class="k">def</span> <span class="nf">_parsePayload</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Parse the string data and extract cell fields.</span>
+
+<span class="sd">        :param str data: string to parse</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">start</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">payloadRange</span><span class="p">()</span>
+        <span class="n">offset</span> <span class="o">=</span> <span class="n">start</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">timestamp</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span><span class="p">:</span><span class="n">offset</span> <span class="o">+</span> <span class="n">TIMESTAMP_LEN</span><span class="p">]</span>
+        <span class="n">offset</span> <span class="o">+=</span> <span class="n">TIMESTAMP_LEN</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">other_or_address</span> <span class="o">=</span> <span class="n">TLVTriple</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">offset</span><span class="p">)</span>
+        <span class="n">offset</span> <span class="o">+=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">other_or_address</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">num_addresses</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span><span class="p">:</span><span class="n">offset</span> <span class="o">+</span> <span class="n">NUM_ADDRESSES_LEN</span><span class="p">]</span>
+        <span class="n">offset</span> <span class="o">+=</span> <span class="n">NUM_ADDRESSES_LEN</span>
+
+        <span class="n">n</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">unpack</span><span class="p">(</span><span class="s">&#39;!B&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_addresses</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">this_or_addresses</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
+            <span class="n">t</span> <span class="o">=</span> <span class="n">TLVTriple</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">offset</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">this_or_addresses</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+            <span class="n">offset</span> <span class="o">+=</span> <span class="nb">len</span><span class="p">(</span><span class="n">t</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">fmt</span> <span class="o">=</span> <span class="s">&#39;{}, timestamp={}, other_or_addresses={}, &#39;</span>
+        <span class="n">fmt</span> <span class="o">+=</span> <span class="s">&#39;num_addresses={}, this_or_addresses={}&#39;</span>
+        <span class="n">fmt</span> <span class="o">=</span> <span class="s">&#39;NetInfoCell({})&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">fmt</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">fmt</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="p">),</span> <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">timestamp</span><span class="p">),</span>
+                          <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">other_or_address</span><span class="p">),</span>
+                          <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_addresses</span><span class="p">),</span>
+                          <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">this_or_addresses</span><span class="p">))</span>
+
+</div>
+<div class="viewcode-block" id="PaddingCell"><a class="viewcode-back" href="../../docs/cell/fixedlen.html#cell.fixedlen.PaddingCell">[docs]</a><span class="k">class</span> <span class="nc">PaddingCell</span><span class="p">(</span><span class="n">FixedLenCell</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;.. note:: tor-spec, Section 3, 7.2.</span>
+
+<span class="sd">    .. note:: Padding has no cell payload fields so, we just use inherited</span>
+<span class="sd">        fields.</span>
+
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="k">pass</span></div>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

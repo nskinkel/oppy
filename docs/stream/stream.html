@@ -1,0 +1,219 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>stream &mdash; oppy 0.1 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <link rel="top" title="oppy 0.1 documentation" href="../../index.html" />
+    <link rel="up" title="stream" href="../stream.html" />
+    <link rel="next" title="util" href="../util.html" />
+    <link rel="prev" title="stream" href="../stream.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="../util.html" title="util"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="../stream.html" title="stream"
+             accesskey="P">previous</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../../docs.html" >Documentation</a> &raquo;</li>
+          <li><a href="../stream.html" accesskey="U">stream</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="module-stream.stream">
+<span id="stream"></span><h1>stream<a class="headerlink" href="#module-stream.stream" title="Permalink to this headline">¶</a></h1>
+<div class="topic">
+<p class="topic-title first">Details</p>
+<p>Streams are the interface between local requests coming from
+OppySOCKSProtocol instances and circuits. Streams are responsible for:</p>
+<blockquote>
+<div><ul class="simple">
+<li>Initiating a connection request (i.e. a RelayBeginCell) on behalf
+of a local application</li>
+<li>Passing data from circuits to local applications and vice versa</li>
+<li>Informing OppySOCKSProtocol instances (and thus, the client
+application) when a remote resource closes the stream</li>
+<li>Informing the circuit when the local application closes the stream</li>
+<li>Splitting up data to be written to the network into chunks that
+can fit into a RelayData cell</li>
+<li>Doing some rudimentary flow-control</li>
+</ul>
+</div></blockquote>
+</div>
+<dl class="class">
+<dt id="stream.stream.Stream">
+<em class="property">class </em><tt class="descclassname">stream.stream.</tt><tt class="descname">Stream</tt><big>(</big><em>request</em>, <em>socks</em><big>)</big><a class="reference internal" href="../../_modules/stream/stream.html#Stream"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#stream.stream.Stream" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <tt class="xref py py-class docutils literal"><span class="pre">object</span></tt></p>
+<p>Represent a Tor Stream.</p>
+<dl class="method">
+<dt id="stream.stream.Stream.recvData">
+<tt class="descname">recvData</tt><big>(</big><em>data</em><big>)</big><a class="reference internal" href="../../_modules/stream/stream.html#Stream.recvData"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#stream.stream.Stream.recvData" title="Permalink to this definition">¶</a></dt>
+<dd><p>Put data received from the network on this stream&#8217;s read queue.</p>
+<p>Called when the circuit attached to this stream passes data to this
+stream.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>data</strong> (<em>str</em>) &#8211; data passed in from circuit to write to this stream&#8217;s
+attached SOCKS protocol</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="stream.stream.Stream.writeData">
+<tt class="descname">writeData</tt><big>(</big><em>data</em><big>)</big><a class="reference internal" href="../../_modules/stream/stream.html#Stream.writeData"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#stream.stream.Stream.writeData" title="Permalink to this definition">¶</a></dt>
+<dd><p>Split <em>data</em> into chunks that can fit in a RelayData cell, and put
+each chunk on this stream&#8217;s write queue.</p>
+<p>Called when the local application attached to this stream sends data
+to the network.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>data</strong> (<em>str</em>) &#8211; data passed in from this stream&#8217;s attached SOCKS
+protocol to write to this stream&#8217;s circuit</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="stream.stream.Stream.incrementPackageWindow">
+<tt class="descname">incrementPackageWindow</tt><big>(</big><big>)</big><a class="reference internal" href="../../_modules/stream/stream.html#Stream.incrementPackageWindow"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#stream.stream.Stream.incrementPackageWindow" title="Permalink to this definition">¶</a></dt>
+<dd><p>Increment this stream&#8217;s package window and, if the package window
+is now above zero and this stream was in a buffering state, begin
+listening for local data again.</p>
+<p>Called by the attached circuit when it receives a sendme cell
+for this stream.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="stream.stream.Stream.streamConnected">
+<tt class="descname">streamConnected</tt><big>(</big><big>)</big><a class="reference internal" href="../../_modules/stream/stream.html#Stream.streamConnected"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#stream.stream.Stream.streamConnected" title="Permalink to this definition">¶</a></dt>
+<dd><p>Begin listening for local data from the attached SOCKS protocol
+to write to this stream&#8217;s circuit.</p>
+<p>Called when the attached circuit receives a RelayConnected cell for
+this stream&#8217;s RelayBegin request.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="stream.stream.Stream.closeFromCircuit">
+<tt class="descname">closeFromCircuit</tt><big>(</big><big>)</big><a class="reference internal" href="../../_modules/stream/stream.html#Stream.closeFromCircuit"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#stream.stream.Stream.closeFromCircuit" title="Permalink to this definition">¶</a></dt>
+<dd><p>Called when this stream is closed by the circuit.</p>
+<p>This can be caused by receiving a RelayEnd cell, the circuit being
+torn down, or the connection going down. We do not need to send a
+RelayEnd cell ourselves if the circuit closed this stream.</p>
+<p>Notify any associated SOCKS protocols and let circuit know this stream
+has closed.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="stream.stream.Stream.closeFromSOCKS">
+<tt class="descname">closeFromSOCKS</tt><big>(</big><big>)</big><a class="reference internal" href="../../_modules/stream/stream.html#Stream.closeFromSOCKS"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#stream.stream.Stream.closeFromSOCKS" title="Permalink to this definition">¶</a></dt>
+<dd><p>Called when the attached SOCKS protocol object is done with this
+stream.</p>
+<p>Request that circuit send a RelayEnd cell on our behalf and notify
+circuit we&#8217;re now closed.</p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="../stream.html"
+                        title="previous chapter">stream</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="../util.html"
+                        title="next chapter">util</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="../../_sources/docs/stream/stream.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="../util.html" title="util"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="../stream.html" title="stream"
+             >previous</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../../docs.html" >Documentation</a> &raquo;</li>
+          <li><a href="../stream.html" >stream</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

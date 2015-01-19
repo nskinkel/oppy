@@ -1,0 +1,512 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>fixedlen &mdash; oppy 0.1 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <link rel="top" title="oppy 0.1 documentation" href="../../index.html" />
+    <link rel="up" title="cell" href="../cell.html" />
+    <link rel="next" title="relay" href="relay.html" />
+    <link rel="prev" title="cell" href="cell.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="relay.html" title="relay"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="cell.html" title="cell"
+             accesskey="P">previous</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../../docs.html" >Documentation</a> &raquo;</li>
+          <li><a href="../cell.html" accesskey="U">cell</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="module-cell.fixedlen">
+<span id="fixedlen"></span><h1>fixedlen<a class="headerlink" href="#module-cell.fixedlen" title="Permalink to this headline">¶</a></h1>
+<dl class="class">
+<dt id="cell.fixedlen.FixedLenCell">
+<em class="property">class </em><tt class="descclassname">cell.fixedlen.</tt><tt class="descname">FixedLenCell</tt><big>(</big><em>header</em>, <em>payload=None</em><big>)</big><a class="reference internal" href="../../_modules/cell/fixedlen.html#FixedLenCell"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.fixedlen.FixedLenCell" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <tt class="xref py py-class docutils literal"><span class="pre">oppy.cell.cell.Cell</span></tt></p>
+<p>A container class for representing fixed-length cells.</p>
+<dl class="staticmethod">
+<dt id="cell.fixedlen.FixedLenCell.padCellBytes">
+<em class="property">static </em><tt class="descname">padCellBytes</tt><big>(</big><em>cell_bytes</em>, <em>link_version=3</em><big>)</big><a class="reference internal" href="../../_modules/cell/fixedlen.html#FixedLenCell.padCellBytes"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.fixedlen.FixedLenCell.padCellBytes" title="Permalink to this definition">¶</a></dt>
+<dd><p>Pad cell_bytes to uniform length.</p>
+<p>Length depends on the Link Protocol version in use.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>cell_bytes</strong> (<em>str</em>) &#8211; byte string to pad</li>
+<li><strong>link_version</strong> (<em>int</em>) &#8211; Link Protocol version in use</li>
+</ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first last"><strong>str</strong> cell_bytes padded to a fixed-length</p>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="cell.fixedlen.FixedLenCell.getBytes">
+<tt class="descname">getBytes</tt><big>(</big><em>trimmed=False</em><big>)</big><a class="reference internal" href="../../_modules/cell/fixedlen.html#FixedLenCell.getBytes"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.fixedlen.FixedLenCell.getBytes" title="Permalink to this definition">¶</a></dt>
+<dd><p>Build and return the raw bytes this cell represents.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>trimmed</strong> (<em>bool</em>) &#8211; ignored</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><strong>str</strong> byte representation of this cell.</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="cell.fixedlen.FixedLenCell.payloadRange">
+<tt class="descname">payloadRange</tt><big>(</big><big>)</big><a class="reference internal" href="../../_modules/cell/fixedlen.html#FixedLenCell.payloadRange"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.fixedlen.FixedLenCell.payloadRange" title="Permalink to this definition">¶</a></dt>
+<dd><p>Return a two-tuple representing the (start, end) positions of this
+cell&#8217;s payload data (based on Link Protocol version in use).</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Returns:</th><td class="field-body"><strong>tuple, int</strong> (start, end) indices of payload.</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="class">
+<dt id="cell.fixedlen.FixedLenCell.Header">
+<em class="property">class </em><tt class="descname">Header</tt><big>(</big><em>circ_id=None</em>, <em>cmd=None</em>, <em>link_version=3</em><big>)</big><a class="reference internal" href="../../_modules/cell/fixedlen.html#FixedLenCell.Header"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.fixedlen.FixedLenCell.Header" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <tt class="xref py py-class docutils literal"><span class="pre">object</span></tt></p>
+<p>A simple container class for representing the header information of
+a fixed-length cell.</p>
+<dl class="method">
+<dt id="cell.fixedlen.FixedLenCell.Header.getBytes">
+<tt class="descname">getBytes</tt><big>(</big><big>)</big><a class="reference internal" href="../../_modules/cell/fixedlen.html#FixedLenCell.Header.getBytes"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.fixedlen.FixedLenCell.Header.getBytes" title="Permalink to this definition">¶</a></dt>
+<dd><p>Return the raw bytes of this header.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Returns:</th><td class="field-body"><strong>str</strong> byte representation of this header</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="cell.fixedlen.Create2Cell">
+<em class="property">class </em><tt class="descclassname">cell.fixedlen.</tt><tt class="descname">Create2Cell</tt><big>(</big><em>header</em>, <em>htype=None</em>, <em>hlen=None</em>, <em>hdata=None</em><big>)</big><a class="reference internal" href="../../_modules/cell/fixedlen.html#Create2Cell"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.fixedlen.Create2Cell" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#cell.fixedlen.FixedLenCell" title="cell.fixedlen.FixedLenCell"><tt class="xref py py-class docutils literal"><span class="pre">cell.fixedlen.FixedLenCell</span></tt></a></p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">tor-spec, Section 5.1</p>
+</div>
+<dl class="staticmethod">
+<dt id="cell.fixedlen.Create2Cell.make">
+<em class="property">static </em><tt class="descname">make</tt><big>(</big><em>circ_id</em>, <em>htype=2</em>, <em>hlen=84</em>, <em>hdata=''</em>, <em>link_version=3</em><big>)</big><a class="reference internal" href="../../_modules/cell/fixedlen.html#Create2Cell.make"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.fixedlen.Create2Cell.make" title="Permalink to this definition">¶</a></dt>
+<dd><p>Build and return a Create2 cell, using default values where
+possible.</p>
+<p>Automatically create and use an appropriate FixedLenCell.Header.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>circ_id</strong> (<em>int</em>) &#8211; Circuit ID to use for this cell</li>
+<li><strong>hlen</strong> (<em>int</em>) &#8211; Length of <strong>hdata</strong> segment</li>
+<li><strong>hdata</strong> (<em>str</em>) &#8211; Actual handshake data to use (an <em>onion skin</em>)</li>
+<li><strong>link_version</strong> (<em>int</em>) &#8211; Link Protocol version in use</li>
+</ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first last"><tt class="xref py py-class docutils literal"><span class="pre">Create2Cell</span></tt></p>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="cell.fixedlen.Create2Cell.getBytes">
+<tt class="descname">getBytes</tt><big>(</big><em>trimmed=False</em><big>)</big><a class="reference internal" href="../../_modules/cell/fixedlen.html#Create2Cell.getBytes"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.fixedlen.Create2Cell.getBytes" title="Permalink to this definition">¶</a></dt>
+<dd><p>Construct and return the byte string represented by this cell.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>trimmed</strong> (<em>bool</em>) &#8211; If <strong>True</strong>, return just the cell bytes with no
+padding.  Otherwise, pad cell bytes out to fixed-length size
+according to Link Protocol version in use.</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><strong>str</strong> formatted byte string represented by this cell</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="cell.fixedlen.Created2Cell">
+<em class="property">class </em><tt class="descclassname">cell.fixedlen.</tt><tt class="descname">Created2Cell</tt><big>(</big><em>header</em>, <em>hlen=None</em>, <em>hdata=None</em><big>)</big><a class="reference internal" href="../../_modules/cell/fixedlen.html#Created2Cell"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.fixedlen.Created2Cell" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#cell.fixedlen.FixedLenCell" title="cell.fixedlen.FixedLenCell"><tt class="xref py py-class docutils literal"><span class="pre">cell.fixedlen.FixedLenCell</span></tt></a></p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">tor-spec, Section 5.1</p>
+</div>
+<dl class="method">
+<dt id="cell.fixedlen.Created2Cell.getBytes">
+<tt class="descname">getBytes</tt><big>(</big><em>trimmed=False</em><big>)</big><a class="reference internal" href="../../_modules/cell/fixedlen.html#Created2Cell.getBytes"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.fixedlen.Created2Cell.getBytes" title="Permalink to this definition">¶</a></dt>
+<dd><p>Construct and return the byte string represented by this cell.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>trimmed</strong> (<em>bool</em>) &#8211; If <strong>True</strong>, return just the bytes without
+padding. Otherwise, pad length out to fixed-length cell size
+according to Link Protocol version in use.</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><strong>str</strong> raw byte string this cell represents.</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="cell.fixedlen.CreatedFastCell">
+<em class="property">class </em><tt class="descclassname">cell.fixedlen.</tt><tt class="descname">CreatedFastCell</tt><big>(</big><em>header</em><big>)</big><a class="reference internal" href="../../_modules/cell/fixedlen.html#CreatedFastCell"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.fixedlen.CreatedFastCell" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#cell.fixedlen.FixedLenCell" title="cell.fixedlen.FixedLenCell"><tt class="xref py py-class docutils literal"><span class="pre">cell.fixedlen.FixedLenCell</span></tt></a></p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">Not Implemented.</p>
+</div>
+</dd></dl>
+
+<dl class="class">
+<dt id="cell.fixedlen.CreatedCell">
+<em class="property">class </em><tt class="descclassname">cell.fixedlen.</tt><tt class="descname">CreatedCell</tt><big>(</big><em>header</em><big>)</big><a class="reference internal" href="../../_modules/cell/fixedlen.html#CreatedCell"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.fixedlen.CreatedCell" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#cell.fixedlen.FixedLenCell" title="cell.fixedlen.FixedLenCell"><tt class="xref py py-class docutils literal"><span class="pre">cell.fixedlen.FixedLenCell</span></tt></a></p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">Not Implemented.</p>
+</div>
+</dd></dl>
+
+<dl class="class">
+<dt id="cell.fixedlen.CreateFastCell">
+<em class="property">class </em><tt class="descclassname">cell.fixedlen.</tt><tt class="descname">CreateFastCell</tt><big>(</big><em>header</em><big>)</big><a class="reference internal" href="../../_modules/cell/fixedlen.html#CreateFastCell"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.fixedlen.CreateFastCell" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#cell.fixedlen.FixedLenCell" title="cell.fixedlen.FixedLenCell"><tt class="xref py py-class docutils literal"><span class="pre">cell.fixedlen.FixedLenCell</span></tt></a></p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">Not Implemented.</p>
+</div>
+</dd></dl>
+
+<dl class="class">
+<dt id="cell.fixedlen.CreateCell">
+<em class="property">class </em><tt class="descclassname">cell.fixedlen.</tt><tt class="descname">CreateCell</tt><big>(</big><em>header</em><big>)</big><a class="reference internal" href="../../_modules/cell/fixedlen.html#CreateCell"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.fixedlen.CreateCell" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#cell.fixedlen.FixedLenCell" title="cell.fixedlen.FixedLenCell"><tt class="xref py py-class docutils literal"><span class="pre">cell.fixedlen.FixedLenCell</span></tt></a></p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">Not Implemented.</p>
+</div>
+</dd></dl>
+
+<dl class="class">
+<dt id="cell.fixedlen.DestroyCell">
+<em class="property">class </em><tt class="descclassname">cell.fixedlen.</tt><tt class="descname">DestroyCell</tt><big>(</big><em>header</em>, <em>reason=None</em><big>)</big><a class="reference internal" href="../../_modules/cell/fixedlen.html#DestroyCell"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.fixedlen.DestroyCell" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#cell.fixedlen.FixedLenCell" title="cell.fixedlen.FixedLenCell"><tt class="xref py py-class docutils literal"><span class="pre">cell.fixedlen.FixedLenCell</span></tt></a></p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">tor-spec, Section 5.4</p>
+</div>
+<dl class="staticmethod">
+<dt id="cell.fixedlen.DestroyCell.make">
+<em class="property">static </em><tt class="descname">make</tt><big>(</big><em>circ_id</em>, <em>reason=0</em>, <em>link_version=3</em><big>)</big><a class="reference internal" href="../../_modules/cell/fixedlen.html#DestroyCell.make"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.fixedlen.DestroyCell.make" title="Permalink to this definition">¶</a></dt>
+<dd><p>Build and return a Destroy cell, using default values where
+possible.</p>
+<p>Automatically create and use an appropriate FixedLenCell.Header.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>circ_id</strong> (<em>int</em>) &#8211; Circuit ID to use for this cell</li>
+<li><strong>reason</strong> (<em>int</em>) &#8211; Reason this DESTROY cell is being sent</li>
+<li><strong>link_version</strong> (<em>int</em>) &#8211; Link Protocol version in use</li>
+</ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first last"><tt class="xref py py-class docutils literal"><span class="pre">DestroyCell</span></tt></p>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="cell.fixedlen.DestroyCell.getBytes">
+<tt class="descname">getBytes</tt><big>(</big><em>trimmed=False</em><big>)</big><a class="reference internal" href="../../_modules/cell/fixedlen.html#DestroyCell.getBytes"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.fixedlen.DestroyCell.getBytes" title="Permalink to this definition">¶</a></dt>
+<dd><p>Construct and return the byte string represented by this cell.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>trimmed</strong> (<em>bool</em>) &#8211; If <strong>True</strong>, return just the bytes without
+padding. Otherwise, pad length out to fixed-length cell size
+according to Link Protocol version in use.</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><strong>str</strong> raw byte string this cell represents</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="cell.fixedlen.EncryptedCell">
+<em class="property">class </em><tt class="descclassname">cell.fixedlen.</tt><tt class="descname">EncryptedCell</tt><big>(</big><em>header</em>, <em>enc_payload=None</em><big>)</big><a class="reference internal" href="../../_modules/cell/fixedlen.html#EncryptedCell"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.fixedlen.EncryptedCell" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#cell.fixedlen.FixedLenCell" title="cell.fixedlen.FixedLenCell"><tt class="xref py py-class docutils literal"><span class="pre">cell.fixedlen.FixedLenCell</span></tt></a></p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">EncryptedCell is not a defined cell type in tor-spec, but
+we use it as a convenient way to represent RELAY cells or
+RELAY_EARLY cells that have either been encrypted by oppy or
+received from the network and have not been decrypted yet.</p>
+</div>
+<dl class="staticmethod">
+<dt id="cell.fixedlen.EncryptedCell.make">
+<em class="property">static </em><tt class="descname">make</tt><big>(</big><em>circ_id</em>, <em>payload</em>, <em>link_version=3</em>, <em>early=False</em><big>)</big><a class="reference internal" href="../../_modules/cell/fixedlen.html#EncryptedCell.make"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.fixedlen.EncryptedCell.make" title="Permalink to this definition">¶</a></dt>
+<dd><p>Build and return a Destroy cell, using default values where
+possible.</p>
+<p>Automatically create and use an appropriate FixedLenCell.Header. The
+<em>early</em> parameter specifies whether we should send a RELAY cell or
+a RELAY_EARLY cell.</p>
+<div class="admonition warning">
+<p class="first admonition-title">Warning</p>
+<p>RELAY_EARLY cells should always be used during circuit creation
+to avoid certain classes of attacks. That is, whenever oppy
+sends a relay EXTEND2 cell, it would be sent as a RELAY_EARLY
+cell instead of a RELAY cell.</p>
+<p class="last">Reference: tor-spec, Section 5.6</p>
+</div>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>circ_id</strong> (<em>int</em>) &#8211; Circuit ID to use for this cell</li>
+<li><strong>payload</strong> (<em>str</em>) &#8211; Payload bytes to use in this cell</li>
+<li><strong>link_version</strong> (<em>int</em>) &#8211; Link Protocol version in use</li>
+<li><strong>early</strong> (<em>bool</em>) &#8211; Dictate whether or not to use a RELAY_EARLY cell</li>
+</ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first last"><tt class="xref py py-class docutils literal"><span class="pre">EncryptedCell</span></tt></p>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="cell.fixedlen.EncryptedCell.getBytes">
+<tt class="descname">getBytes</tt><big>(</big><em>trimmed=False</em><big>)</big><a class="reference internal" href="../../_modules/cell/fixedlen.html#EncryptedCell.getBytes"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.fixedlen.EncryptedCell.getBytes" title="Permalink to this definition">¶</a></dt>
+<dd><p>Construct and return the byte string represented by this cell.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>trimmed</strong> (<em>bool</em>) &#8211; ignored, encrypted cell&#8217;s don&#8217;t know anything
+about their payload or its length</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><strong>str</strong> raw byte string this cell represents</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="cell.fixedlen.NetInfoCell">
+<em class="property">class </em><tt class="descclassname">cell.fixedlen.</tt><tt class="descname">NetInfoCell</tt><big>(</big><em>header</em>, <em>timestamp=None</em>, <em>other_or_address=None</em>, <em>num_addresses=None</em>, <em>this_or_addresses=None</em><big>)</big><a class="reference internal" href="../../_modules/cell/fixedlen.html#NetInfoCell"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.fixedlen.NetInfoCell" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#cell.fixedlen.FixedLenCell" title="cell.fixedlen.FixedLenCell"><tt class="xref py py-class docutils literal"><span class="pre">cell.fixedlen.FixedLenCell</span></tt></a></p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">tor-spec.txt, Section 4.5</p>
+</div>
+<dl class="staticmethod">
+<dt id="cell.fixedlen.NetInfoCell.make">
+<em class="property">static </em><tt class="descname">make</tt><big>(</big><em>circ_id</em>, <em>other_or_address</em>, <em>this_or_addresses</em>, <em>timestamp=None</em>, <em>link_version=3</em><big>)</big><a class="reference internal" href="../../_modules/cell/fixedlen.html#NetInfoCell.make"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.fixedlen.NetInfoCell.make" title="Permalink to this definition">¶</a></dt>
+<dd><p>Build and return a Destroy cell, using default values where
+possible.</p>
+<p>Automatically create and use an appropriate FixedLenCell.Header.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>circ_id</strong> (<em>int</em>) &#8211; Circuit ID to use for this cell</li>
+<li><strong>timestamp</strong> (<em>str</em>) &#8211; Time this <cite>NetInfoCell</cite> was created. Big-endian
+unsigned integer of seconds since the Unix epoch (packed
+format).</li>
+<li><strong>other_or_address</strong> (<em>oppy.cell.util.TLVTriple</em>) &#8211; Public IP
+address of the recipient of this NetInfoCell.</li>
+<li><strong>oppy.cell.util.TLVTriple this_or_addresses</strong> (<em>list,</em>) &#8211; List
+of the public IP address(es) of the originator of this
+NetInfoCell.</li>
+</ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first last"><tt class="xref py py-class docutils literal"><span class="pre">NetInfoCell</span></tt></p>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="cell.fixedlen.NetInfoCell.getBytes">
+<tt class="descname">getBytes</tt><big>(</big><em>trimmed=False</em><big>)</big><a class="reference internal" href="../../_modules/cell/fixedlen.html#NetInfoCell.getBytes"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.fixedlen.NetInfoCell.getBytes" title="Permalink to this definition">¶</a></dt>
+<dd><p>Construct and return the byte string represented by this cell.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>trimmed</strong> (<em>bool</em>) &#8211; Whether or not we should pad this cell&#8217;s bytes.
+If <strong>True</strong>, pad based on Link Protocol version in use.</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><strong>str</strong> raw bytes this cell represents</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="cell.fixedlen.PaddingCell">
+<em class="property">class </em><tt class="descclassname">cell.fixedlen.</tt><tt class="descname">PaddingCell</tt><big>(</big><em>header</em>, <em>payload=None</em><big>)</big><a class="reference internal" href="../../_modules/cell/fixedlen.html#PaddingCell"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.fixedlen.PaddingCell" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#cell.fixedlen.FixedLenCell" title="cell.fixedlen.FixedLenCell"><tt class="xref py py-class docutils literal"><span class="pre">cell.fixedlen.FixedLenCell</span></tt></a></p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">tor-spec, Section 3, 7.2.</p>
+</div>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">Padding has no cell payload fields so, we just use inherited
+fields.</p>
+</div>
+</dd></dl>
+
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="cell.html"
+                        title="previous chapter">cell</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="relay.html"
+                        title="next chapter">relay</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="../../_sources/docs/cell/fixedlen.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="relay.html" title="relay"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="cell.html" title="cell"
+             >previous</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../../docs.html" >Documentation</a> &raquo;</li>
+          <li><a href="../cell.html" >cell</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

@@ -1,0 +1,233 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>cell.util &mdash; oppy 0.1 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <link rel="top" title="oppy 0.1 documentation" href="../../index.html" />
+    <link rel="up" title="Module code" href="../index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for cell.util</h1><div class="highlight"><pre>
+<span class="c"># Copyright 2014, 2015, Nik Kinkel and David Johnston</span>
+<span class="c"># See LICENSE for licensing information</span>
+
+<span class="kn">import</span> <span class="nn">struct</span>
+
+<span class="kn">import</span> <span class="nn">ipaddress</span>
+
+<span class="kn">import</span> <span class="nn">oppy.cell.definitions</span> <span class="kn">as</span> <span class="nn">DEF</span>
+<span class="kn">import</span> <span class="nn">oppy.util.tools</span> <span class="kn">as</span> <span class="nn">tools</span>
+
+<span class="kn">from</span> <span class="nn">oppy.cell.exceptions</span> <span class="kn">import</span> <span class="n">BadLinkSpecifier</span>
+
+
+<div class="viewcode-block" id="LinkSpecifier"><a class="viewcode-back" href="../../docs/cell/util.html#cell.util.LinkSpecifier">[docs]</a><span class="k">class</span> <span class="nc">LinkSpecifier</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;.. note:: tor-spec, Section 5.1.2&#39;&#39;&#39;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">relay</span><span class="p">,</span> <span class="n">legacy</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        :param stem.descriptor.server_descriptor.RelayDescriptor relay:</span>
+<span class="sd">            relay descriptor that describes the relay for this link</span>
+<span class="sd">            specifier</span>
+<span class="sd">        :param bool legacy: if **True**, make a legacy link specifier.</span>
+<span class="sd">            make an IPv4 or IPv6 link specifier otherwise according to</span>
+<span class="sd">            the relay&#39;s public IP address.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">if</span> <span class="n">legacy</span> <span class="ow">is</span> <span class="bp">True</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">lstype</span> <span class="o">=</span> <span class="n">DEF</span><span class="o">.</span><span class="n">LSTYPE_LEGACY</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">lslen</span> <span class="o">=</span> <span class="n">DEF</span><span class="o">.</span><span class="n">LSLEN_LEGACY</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">lspec</span> <span class="o">=</span> <span class="n">tools</span><span class="o">.</span><span class="n">signingKeyToSHA1</span><span class="p">(</span><span class="n">relay</span><span class="o">.</span><span class="n">signing_key</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">addr</span> <span class="o">=</span> <span class="n">ipaddress</span><span class="o">.</span><span class="n">ip_address</span><span class="p">(</span><span class="nb">unicode</span><span class="p">(</span><span class="n">relay</span><span class="o">.</span><span class="n">address</span><span class="p">))</span>
+            <span class="n">port</span> <span class="o">=</span> <span class="n">relay</span><span class="o">.</span><span class="n">or_port</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">addr</span><span class="p">,</span> <span class="n">ipaddress</span><span class="o">.</span><span class="n">IPv4Address</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">lstype</span> <span class="o">=</span> <span class="n">DEF</span><span class="o">.</span><span class="n">LSTYPE_IPv4</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">lslen</span> <span class="o">=</span> <span class="n">DEF</span><span class="o">.</span><span class="n">LSLEN_IPv4</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">lstype</span> <span class="o">=</span> <span class="n">DEF</span><span class="o">.</span><span class="n">LSTYPE_IPv6</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">lslen</span> <span class="o">=</span> <span class="n">DEF</span><span class="o">.</span><span class="n">LSLEN_IPv6</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">lspec</span> <span class="o">=</span> <span class="n">addr</span><span class="o">.</span><span class="n">packed</span> <span class="o">+</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;!H&#39;</span><span class="p">,</span> <span class="n">port</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">lspec</span><span class="p">)</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lslen</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">BadLinkSpecifier</span><span class="p">()</span>
+
+<div class="viewcode-block" id="LinkSpecifier.getBytes"><a class="viewcode-back" href="../../docs/cell/util.html#cell.util.LinkSpecifier.getBytes">[docs]</a>    <span class="k">def</span> <span class="nf">getBytes</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Build and construct the raw byte string represented by this</span>
+<span class="sd">        link specifier.</span>
+
+<span class="sd">        :returns: **str** raw byte string this link specifier represents</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">ret</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;!B&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">lstype</span><span class="p">)</span>
+        <span class="n">ret</span> <span class="o">+=</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;!B&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">lslen</span><span class="p">)</span>
+        <span class="n">ret</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lspec</span>
+        <span class="k">return</span> <span class="n">ret</span>
+</div>
+    <span class="k">def</span> <span class="nf">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="c"># lstype and lslen fields are one byte each</span>
+        <span class="k">return</span> <span class="mi">1</span> <span class="o">+</span> <span class="mi">1</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">lslen</span>
+
+</div>
+<span class="n">TLV_ADDR_TYPE_LEN</span>   <span class="o">=</span> <span class="mi">1</span>
+<span class="n">TLV_ADDR_LEN_LEN</span>    <span class="o">=</span> <span class="mi">1</span>
+
+
+<span class="n">TLV_ERROR_TRANSIENT</span>     <span class="o">=</span> <span class="mh">0xF0</span>
+<span class="n">TLV_ERROR_NONTRANSIENT</span>  <span class="o">=</span> <span class="mh">0xF1</span>
+
+
+<span class="c"># XXX what about TTL?</span>
+<div class="viewcode-block" id="TLVTriple"><a class="viewcode-back" href="../../docs/cell/util.html#cell.util.TLVTriple">[docs]</a><span class="k">class</span> <span class="nc">TLVTriple</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;.. note:: tor-spec, Section 6.4</span>
+<span class="sd">    </span>
+<span class="sd">    .. todo:: Handle the hostname type properly. TLVTriple&#39;s currently</span>
+<span class="sd">        don&#39;t know how to deal with a hostname type. Additionally, they</span>
+<span class="sd">        don&#39;t know how to handle a TTL or the various errors that can</span>
+<span class="sd">        occur.</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">addr</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        :param str addr: IP address for this TLVTriple</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">addr</span> <span class="o">=</span> <span class="n">ipaddress</span><span class="o">.</span><span class="n">ip_address</span><span class="p">(</span><span class="n">addr</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">addr</span><span class="p">,</span> <span class="n">ipaddress</span><span class="o">.</span><span class="n">IPv4Address</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">addr_type</span> <span class="o">=</span> <span class="n">DEF</span><span class="o">.</span><span class="n">IPv4_ADDR_TYPE</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">addr_len</span>  <span class="o">=</span> <span class="n">DEF</span><span class="o">.</span><span class="n">IPv4_ADDR_LEN</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">addr</span><span class="p">,</span> <span class="n">ipaddress</span><span class="o">.</span><span class="n">IPv6Address</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">addr_type</span> <span class="o">=</span> <span class="n">DEF</span><span class="o">.</span><span class="n">IPv6_ADDR_TYPE</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">addr_len</span>  <span class="o">=</span> <span class="n">DEF</span><span class="o">.</span><span class="n">IPv6_ADDR_LEN</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&#39;TLVTriple can only handle IPv4 and IPv6 type/length/value &#39;</span>
+            <span class="n">msg</span> <span class="o">+=</span> <span class="s">&#39;triples for now.&#39;</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">value</span> <span class="o">=</span> <span class="n">addr</span><span class="o">.</span><span class="n">packed</span>
+
+    <span class="c"># XXX addr_len is currently ignored because we can only currently handle</span>
+    <span class="c">#     IPv4 and IPv6 TLV&#39;s and not hostnames. When RELAY_RESOLVE/D cells</span>
+    <span class="c">#     are implemented, this should be changed to handle hostnames of</span>
+    <span class="c">#     different lengths</span>
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="TLVTriple.parse"><a class="viewcode-back" href="../../docs/cell/util.html#cell.util.TLVTriple.parse">[docs]</a>    <span class="k">def</span> <span class="nf">parse</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">offset</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Parse and extract TLVTriple fields from a byte string.</span>
+
+<span class="sd">        :param str data: byte string to parse</span>
+<span class="sd">        :param int offset: offset in str data where we should start</span>
+<span class="sd">            reading</span>
+<span class="sd">        :returns: :class:`~oppy.cell.util.TLVTriple`</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">addr_type</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">unpack</span><span class="p">(</span><span class="s">&#39;!B&#39;</span><span class="p">,</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span><span class="p">:</span><span class="n">offset</span> <span class="o">+</span>
+                                             <span class="n">TLV_ADDR_TYPE_LEN</span><span class="p">])[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">offset</span> <span class="o">+=</span> <span class="n">TLV_ADDR_TYPE_LEN</span>
+        <span class="c"># use addr_len for hostname types</span>
+        <span class="n">addr_len</span>  <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">unpack</span><span class="p">(</span><span class="s">&#39;!B&#39;</span><span class="p">,</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span><span class="p">:</span><span class="n">offset</span> <span class="o">+</span>
+                                             <span class="n">TLV_ADDR_LEN_LEN</span><span class="p">])[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">offset</span> <span class="o">+=</span> <span class="n">TLV_ADDR_LEN_LEN</span>
+        <span class="k">if</span> <span class="n">addr_type</span> <span class="o">==</span> <span class="n">DEF</span><span class="o">.</span><span class="n">IPv4_ADDR_TYPE</span><span class="p">:</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span><span class="p">:</span><span class="n">offset</span> <span class="o">+</span> <span class="n">DEF</span><span class="o">.</span><span class="n">IPv4_ADDR_LEN</span><span class="p">]</span>
+            <span class="n">offset</span> <span class="o">+=</span> <span class="n">DEF</span><span class="o">.</span><span class="n">IPv4_ADDR_LEN</span>
+        <span class="k">elif</span> <span class="n">addr_type</span> <span class="o">==</span> <span class="n">DEF</span><span class="o">.</span><span class="n">IPv6_ADDR_TYPE</span><span class="p">:</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span><span class="p">:</span><span class="n">offset</span> <span class="o">+</span> <span class="n">DEF</span><span class="o">.</span><span class="n">IPv6_ADDR_LEN</span><span class="p">]</span>
+            <span class="n">offset</span> <span class="o">+=</span> <span class="n">DEF</span><span class="o">.</span><span class="n">IPv6_ADDR_LEN</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;TLVTriple can&#39;t parse type {0} yet.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">addr_type</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">TLVTriple</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
+
+    <span class="c"># XXX handle hostname types and errors properly</span></div>
+<div class="viewcode-block" id="TLVTriple.getBytes"><a class="viewcode-back" href="../../docs/cell/util.html#cell.util.TLVTriple.getBytes">[docs]</a>    <span class="k">def</span> <span class="nf">getBytes</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Construct and return the raw byte string this TLVTriple</span>
+<span class="sd">        represents.</span>
+
+<span class="sd">        :returns: **str** raw byte string this TLVTriple represents.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">ret</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;!B&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">addr_type</span><span class="p">)</span>
+        <span class="n">ret</span> <span class="o">+=</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;!B&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">addr_len</span><span class="p">)</span>
+        <span class="n">ret</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">value</span>
+        <span class="k">return</span> <span class="n">ret</span>
+</div>
+    <span class="k">def</span> <span class="nf">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">TLV_ADDR_TYPE_LEN</span> <span class="o">+</span> <span class="n">TLV_ADDR_LEN_LEN</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">value</span><span class="p">)</span></div>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

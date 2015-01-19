@@ -1,0 +1,186 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>ntorfsm &mdash; oppy 0.1 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <link rel="top" title="oppy 0.1 documentation" href="../../index.html" />
+    <link rel="up" title="circuit" href="../circuit.html" />
+    <link rel="next" title="exceptions" href="exceptions.html" />
+    <link rel="prev" title="circuit" href="circuit.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="exceptions.html" title="exceptions"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="circuit.html" title="circuit"
+             accesskey="P">previous</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../../docs.html" >Documentation</a> &raquo;</li>
+          <li><a href="../circuit.html" accesskey="U">circuit</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="module-circuit.handshake.ntorfsm">
+<span id="ntorfsm"></span><h1>ntorfsm<a class="headerlink" href="#module-circuit.handshake.ntorfsm" title="Permalink to this headline">¶</a></h1>
+<div class="topic">
+<p class="topic-title first">Details</p>
+<p>An NTorFSM steps through each state of a circuit handshake. At each step
+an NTorFSM expects to receive a certain kind of cell. Either this cell is
+received, processed, and a response cell is returned or an exception
+is raised (and the circuit is destroyed).</p>
+<p>NTorFSM&#8217;s also derive key material and add RelayCrypto objects to the
+associated circuit&#8217;s <em>crypt_path</em>.</p>
+</div>
+<dl class="class">
+<dt id="circuit.handshake.ntorfsm.NTorFSM">
+<em class="property">class </em><tt class="descclassname">circuit.handshake.ntorfsm.</tt><tt class="descname">NTorFSM</tt><big>(</big><em>circuit_id</em>, <em>path</em>, <em>crypt_path</em><big>)</big><a class="reference internal" href="../../_modules/circuit/handshake/ntorfsm.html#NTorFSM"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#circuit.handshake.ntorfsm.NTorFSM" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <tt class="xref py py-class docutils literal"><span class="pre">object</span></tt></p>
+<p>Finite state machine to step through an ntor handshake with relays
+on a circuit&#8217;s path.</p>
+<dl class="method">
+<dt id="circuit.handshake.ntorfsm.NTorFSM.recvCell">
+<tt class="descname">recvCell</tt><big>(</big><em>cell</em><big>)</big><a class="reference internal" href="../../_modules/circuit/handshake/ntorfsm.html#NTorFSM.recvCell"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#circuit.handshake.ntorfsm.NTorFSM.recvCell" title="Permalink to this definition">¶</a></dt>
+<dd><p>Call a handler function to process <em>cell</em> based on this ntor fsm&#8217;s
+current state.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>cell</strong> (<em>cell</em>) &#8211; cell received from this ntor fsm&#8217;s circuit</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><strong>cell, None</strong> may return either the next cell to send
+to step through handshakes with relays on this path or None if
+no response is required</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="circuit.handshake.ntorfsm.NTorFSM.getInitiatingCell">
+<tt class="descname">getInitiatingCell</tt><big>(</big><big>)</big><a class="reference internal" href="../../_modules/circuit/handshake/ntorfsm.html#NTorFSM.getInitiatingCell"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#circuit.handshake.ntorfsm.NTorFSM.getInitiatingCell" title="Permalink to this definition">¶</a></dt>
+<dd><p>Build and return the initiating cell for this ntor fsm - a
+Create2Cell.</p>
+<p>Advance this ntor fsm&#8217;s state.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Returns:</th><td class="field-body"><strong>oppy.cell.fixedlen.Create2Cell</strong></td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="circuit.handshake.ntorfsm.NTorFSM.isDone">
+<tt class="descname">isDone</tt><big>(</big><big>)</big><a class="reference internal" href="../../_modules/circuit/handshake/ntorfsm.html#NTorFSM.isDone"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#circuit.handshake.ntorfsm.NTorFSM.isDone" title="Permalink to this definition">¶</a></dt>
+<dd><p>Return <strong>True</strong> iff this ntor fsm&#8217;s state is State.DONE</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Returns:</th><td class="field-body"><strong>bool</strong> <strong>True</strong> if state is State.DONE</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="circuit.html"
+                        title="previous chapter">circuit</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="exceptions.html"
+                        title="next chapter">exceptions</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="../../_sources/docs/circuit/ntorfsm.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="exceptions.html" title="exceptions"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="circuit.html" title="circuit"
+             >previous</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../../docs.html" >Documentation</a> &raquo;</li>
+          <li><a href="../circuit.html" >circuit</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

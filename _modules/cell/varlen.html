@@ -1,0 +1,452 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>cell.varlen &mdash; oppy 0.1 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <link rel="top" title="oppy 0.1 documentation" href="../../index.html" />
+    <link rel="up" title="Module code" href="../index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for cell.varlen</h1><div class="highlight"><pre>
+<span class="c"># Copyright 2014, 2015, Nik Kinkel and David Johnston</span>
+<span class="c"># See LICENSE for licensing information</span>
+
+<span class="kn">import</span> <span class="nn">struct</span>
+
+<span class="kn">import</span> <span class="nn">oppy.connection.definitions</span> <span class="kn">as</span> <span class="nn">CONN_DEFS</span>
+<span class="kn">import</span> <span class="nn">oppy.cell.definitions</span> <span class="kn">as</span> <span class="nn">DEF</span>
+
+<span class="kn">from</span> <span class="nn">oppy.cell.cell</span> <span class="kn">import</span> <span class="n">Cell</span>
+<span class="kn">from</span> <span class="nn">oppy.cell.exceptions</span> <span class="kn">import</span> <span class="n">BadCellHeader</span><span class="p">,</span> <span class="n">BadPayloadData</span>
+
+
+<div class="viewcode-block" id="VarLenCell"><a class="viewcode-back" href="../../docs/cell/varlen.html#cell.varlen.VarLenCell">[docs]</a><span class="k">class</span> <span class="nc">VarLenCell</span><span class="p">(</span><span class="n">Cell</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;A container class for representing a variable-length cell.&#39;&#39;&#39;</span>
+
+    <span class="n">_subclass_map</span> <span class="o">=</span> <span class="bp">None</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">header</span><span class="p">,</span> <span class="n">payload</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        :param :class:`~cell.varlen.VarLenCell.Header` header:</span>
+<span class="sd">            header to use with this cell.</span>
+<span class="sd">        :param str payload: payload bytes to use with this cell</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">header</span><span class="p">,</span> <span class="n">VarLenCell</span><span class="o">.</span><span class="n">Header</span><span class="p">):</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&#39;Expected cell header type VarLenCell.Header, but &#39;</span>
+            <span class="n">msg</span> <span class="o">+=</span> <span class="s">&#39;received header of type {}&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">header</span><span class="p">))</span>
+            <span class="k">raise</span> <span class="n">BadCellHeader</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">header</span> <span class="o">=</span> <span class="n">header</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">payload</span> <span class="o">=</span> <span class="n">payload</span>
+
+<div class="viewcode-block" id="VarLenCell.getBytes"><a class="viewcode-back" href="../../docs/cell/varlen.html#cell.varlen.VarLenCell.getBytes">[docs]</a>    <span class="k">def</span> <span class="nf">getBytes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">trimmed</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Build and return the raw byte string this cell represents.</span>
+
+<span class="sd">        :param bool trimmed: ignored for varlen cells</span>
+<span class="sd">        :returns: **str** raw byte string represented by this cell</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">getBytes</span><span class="p">()</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">payload</span>
+</div>
+    <span class="k">def</span> <span class="nf">_parseHeader</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="c"># Note that each field of `self.header`, except for `payload_len`,</span>
+        <span class="c"># should already be set.</span>
+        <span class="n">already_parsed</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">circ_id</span><span class="p">,</span>
+                          <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">cmd</span><span class="p">,</span>
+                          <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">link_version</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">field</span> <span class="ow">in</span> <span class="n">already_parsed</span><span class="p">:</span>
+            <span class="k">assert</span> <span class="n">field</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">link_version</span> <span class="o">&lt;=</span> <span class="mi">3</span><span class="p">:</span>
+            <span class="n">start</span> <span class="o">=</span> <span class="n">DEF</span><span class="o">.</span><span class="n">PAYLOAD_START_V3</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">start</span> <span class="o">=</span> <span class="n">DEF</span><span class="o">.</span><span class="n">PAYLOAD_START_V4</span>
+
+        <span class="n">end</span> <span class="o">=</span> <span class="n">start</span> <span class="o">+</span> <span class="n">DEF</span><span class="o">.</span><span class="n">PAYLOAD_FIELD_LEN</span>
+        <span class="n">length</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">unpack</span><span class="p">(</span><span class="s">&quot;!H&quot;</span><span class="p">,</span> <span class="n">data</span><span class="p">[</span><span class="n">start</span><span class="p">:</span><span class="n">end</span><span class="p">])[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">payload_len</span> <span class="o">=</span> <span class="n">length</span>
+
+    <span class="k">def</span> <span class="nf">_parsePayload</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="n">start</span><span class="p">,</span> <span class="n">end</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">payloadRange</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">payload</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">start</span><span class="p">:</span><span class="n">end</span><span class="p">]</span>
+
+<div class="viewcode-block" id="VarLenCell.payloadRange"><a class="viewcode-back" href="../../docs/cell/varlen.html#cell.varlen.VarLenCell.payloadRange">[docs]</a>    <span class="k">def</span> <span class="nf">payloadRange</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Return a two-tuple indicating the start, end positions of this</span>
+<span class="sd">        cell&#39;s payload.</span>
+
+<span class="sd">        :returns: **tuple, int** (start, end) positions of this cell&#39;s</span>
+<span class="sd">            payload</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">circ_len</span> <span class="o">=</span> <span class="mi">2</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">link_version</span> <span class="o">&lt;=</span> <span class="mi">3</span> <span class="k">else</span> <span class="mi">4</span>
+        <span class="n">start</span> <span class="o">=</span> <span class="n">circ_len</span> <span class="o">+</span> <span class="mi">1</span> <span class="o">+</span> <span class="mi">2</span>
+        <span class="n">end</span> <span class="o">=</span> <span class="n">start</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">payload_len</span>
+        <span class="k">return</span> <span class="n">start</span><span class="p">,</span> <span class="n">end</span>
+</div>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">_initSubclassMap</span><span class="p">():</span>
+        <span class="n">VarLenCell</span><span class="o">.</span><span class="n">_subclass_map</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="n">DEF</span><span class="o">.</span><span class="n">VERSIONS_CMD</span>        <span class="p">:</span>   <span class="n">VersionsCell</span><span class="p">,</span>
+            <span class="n">DEF</span><span class="o">.</span><span class="n">VPADDING_CMD</span>        <span class="p">:</span>   <span class="n">VPaddingCell</span><span class="p">,</span>
+            <span class="n">DEF</span><span class="o">.</span><span class="n">CERTS_CMD</span>           <span class="p">:</span>   <span class="n">CertsCell</span><span class="p">,</span>
+            <span class="n">DEF</span><span class="o">.</span><span class="n">AUTH_CHALLENGE_CMD</span>  <span class="p">:</span>   <span class="n">AuthChallengeCell</span><span class="p">,</span>
+            <span class="n">DEF</span><span class="o">.</span><span class="n">AUTHENTICATE_CMD</span>    <span class="p">:</span>   <span class="n">AuthenticateCell</span><span class="p">,</span>
+            <span class="n">DEF</span><span class="o">.</span><span class="n">AUTHORIZE_CMD</span>       <span class="p">:</span>   <span class="n">AuthorizeCell</span>
+        <span class="p">}</span>
+
+<div class="viewcode-block" id="VarLenCell.Header"><a class="viewcode-back" href="../../docs/cell/varlen.html#cell.varlen.VarLenCell.Header">[docs]</a>    <span class="k">class</span> <span class="nc">Header</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;A simple container class for representing the header information of</span>
+<span class="sd">        a variable-length cell.&#39;&#39;&#39;</span>
+
+        <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">circ_id</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">cmd</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">payload_len</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                     <span class="n">link_version</span><span class="o">=</span><span class="mi">3</span><span class="p">):</span>
+            <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">            :param int circ_id: Circuit ID to use in this header</span>
+<span class="sd">            :param int cmd: command to use in this cell</span>
+<span class="sd">            :param int payload_len: length of this cell&#39;s payload</span>
+<span class="sd">            :param int link_version: Link Protocol version in use</span>
+<span class="sd">            &#39;&#39;&#39;</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">circ_id</span> <span class="o">=</span> <span class="n">circ_id</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">cmd</span> <span class="o">=</span> <span class="n">cmd</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">payload_len</span> <span class="o">=</span> <span class="n">payload_len</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">link_version</span> <span class="o">=</span> <span class="n">link_version</span>
+
+<div class="viewcode-block" id="VarLenCell.Header.getBytes"><a class="viewcode-back" href="../../docs/cell/varlen.html#cell.varlen.VarLenCell.Header.getBytes">[docs]</a>        <span class="k">def</span> <span class="nf">getBytes</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+            <span class="sd">&#39;&#39;&#39;Build and return the raw byte string represented by this</span>
+<span class="sd">            header.</span>
+
+<span class="sd">            :returns: **str** raw byte string this header represents</span>
+<span class="sd">            &#39;&#39;&#39;</span>
+            <span class="n">fmt</span> <span class="o">=</span> <span class="s">&quot;!HBH&quot;</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">link_version</span> <span class="o">&lt;=</span> <span class="mi">3</span> <span class="k">else</span> <span class="s">&quot;!IBH&quot;</span>
+            <span class="k">return</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="n">fmt</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">circ_id</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">cmd</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">payload_len</span><span class="p">)</span>
+</div>
+        <span class="k">def</span> <span class="nf">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+            <span class="n">fmt</span> <span class="o">=</span> <span class="s">&quot;circ_id={}, cmd={}, payload_len={}, link_version={}&quot;</span>
+            <span class="n">fmt</span> <span class="o">=</span> <span class="s">&quot;VarLenCell.Header({})&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">fmt</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">fmt</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">circ_id</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">cmd</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">payload_len</span><span class="p">,</span>
+                              <span class="bp">self</span><span class="o">.</span><span class="n">link_version</span><span class="p">)</span>
+
+</div></div>
+<span class="n">CHALLENGE_LEN</span> <span class="o">=</span> <span class="mi">32</span>
+<span class="n">N_METHODS_LEN</span> <span class="o">=</span> <span class="mi">2</span>
+
+
+<div class="viewcode-block" id="AuthChallengeCell"><a class="viewcode-back" href="../../docs/cell/varlen.html#cell.varlen.AuthChallengeCell">[docs]</a><span class="k">class</span> <span class="nc">AuthChallengeCell</span><span class="p">(</span><span class="n">VarLenCell</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;.. note:: tor-spec, Section 4.3&#39;&#39;&#39;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">header</span><span class="p">,</span> <span class="n">challenge</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">n_methods</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">methods</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        :param :class:`~cell.varlen.VarLenCell.Header` header:</span>
+<span class="sd">            header, initialized with values</span>
+<span class="sd">        :param str challenge: challenge bytes for use with this cell</span>
+<span class="sd">        :param str n_methods: number of &#39;methods&#39; in use with this cell</span>
+<span class="sd">        :param str methods: authentication methods that the responder will</span>
+<span class="sd">            accept</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">header</span> <span class="o">=</span> <span class="n">header</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">challenge</span> <span class="o">=</span> <span class="n">challenge</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">n_methods</span> <span class="o">=</span> <span class="n">n_methods</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">methods</span> <span class="o">=</span> <span class="n">methods</span>
+
+<div class="viewcode-block" id="AuthChallengeCell.getBytes"><a class="viewcode-back" href="../../docs/cell/varlen.html#cell.varlen.AuthChallengeCell.getBytes">[docs]</a>    <span class="k">def</span> <span class="nf">getBytes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">trimmed</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Build and return raw byte string representing this cell.</span>
+
+<span class="sd">        :param bool trimmed: ignored for varlen cells</span>
+<span class="sd">        :returns: str -- raw bytes representing this cell.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">ret</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">getBytes</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">ret</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">challenge</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_methods</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">methods</span>
+</div>
+    <span class="k">def</span> <span class="nf">_parsePayload</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Parse data and extract this cell&#39;s fields.</span>
+
+<span class="sd">        Fill in this cell&#39;s attributes.</span>
+
+<span class="sd">        :param str data: bytes to parse</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">start</span><span class="p">,</span> <span class="n">end</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">payloadRange</span><span class="p">()</span>
+        <span class="n">offset</span> <span class="o">=</span> <span class="n">start</span>
+
+        <span class="c"># payload of auth challenge must be even number bytes</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="n">start</span><span class="p">:</span><span class="n">end</span><span class="p">])</span> <span class="o">%</span> <span class="mi">2</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&#39;AuthChallenge cell payload must be an even number &#39;</span>
+            <span class="n">msg</span> <span class="o">+=</span> <span class="s">&#39;of bytes.&#39;</span>
+            <span class="k">raise</span> <span class="n">BadPayloadData</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">challenge</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span><span class="p">:</span><span class="n">offset</span> <span class="o">+</span> <span class="n">CHALLENGE_LEN</span><span class="p">]</span>
+        <span class="n">offset</span> <span class="o">+=</span> <span class="n">CHALLENGE_LEN</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">n_methods</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span><span class="p">:</span><span class="n">offset</span> <span class="o">+</span> <span class="n">N_METHODS_LEN</span><span class="p">]</span>
+        <span class="n">offset</span> <span class="o">+=</span> <span class="n">N_METHODS_LEN</span>
+
+        <span class="n">n</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">unpack</span><span class="p">(</span><span class="s">&#39;!H&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_methods</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="n">end</span> <span class="o">-</span> <span class="n">start</span> <span class="o">&lt;</span> <span class="n">CHALLENGE_LEN</span> <span class="o">+</span> <span class="n">N_METHODS_LEN</span> <span class="o">+</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">n</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;AuthChallengeCell specified {} bytes of &#39;methods&#39;, but &quot;</span>
+            <span class="n">msg</span> <span class="o">+=</span> <span class="s">&quot;only {} bytes were available.&quot;</span>
+            <span class="k">raise</span> <span class="n">BadPayloadData</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">n</span><span class="p">,</span>
+                                 <span class="n">end</span> <span class="o">-</span> <span class="n">start</span> <span class="o">-</span> <span class="n">CHALLENGE_LEN</span> <span class="o">-</span> <span class="n">N_METHODS_LEN</span><span class="p">))</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">methods</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span><span class="p">:</span><span class="n">offset</span> <span class="o">+</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">n</span><span class="p">]</span>
+
+    <span class="k">def</span> <span class="nf">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">fmt</span> <span class="o">=</span> <span class="s">&#39;{}, challenge={}, n_methods={}, methods={}&#39;</span>
+        <span class="n">fmt</span> <span class="o">=</span> <span class="s">&#39;AuthChallengeCell({})&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">fmt</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">fmt</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="p">),</span> <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">challenge</span><span class="p">),</span>
+                          <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">n_methods</span><span class="p">),</span> <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">methods</span><span class="p">))</span>
+
+</div>
+<div class="viewcode-block" id="AuthenticateCell"><a class="viewcode-back" href="../../docs/cell/varlen.html#cell.varlen.AuthenticateCell">[docs]</a><span class="k">class</span> <span class="nc">AuthenticateCell</span><span class="p">(</span><span class="n">VarLenCell</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;.. note:: Not Implemented&#39;&#39;&#39;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">header</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s">&quot;Can&#39;t make AuthenticateCell yet.&quot;</span><span class="p">)</span>
+
+</div>
+<div class="viewcode-block" id="AuthorizeCell"><a class="viewcode-back" href="../../docs/cell/varlen.html#cell.varlen.AuthorizeCell">[docs]</a><span class="k">class</span> <span class="nc">AuthorizeCell</span><span class="p">(</span><span class="n">VarLenCell</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;.. note:: Not Implemented&#39;&#39;&#39;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">header</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s">&quot;Can&#39;t make AuthorizeCell yet.&quot;</span><span class="p">)</span>
+
+</div>
+<span class="n">NUM_CERT_LEN</span>  <span class="o">=</span> <span class="mi">1</span>
+<span class="n">CERT_TYPE_LEN</span> <span class="o">=</span> <span class="mi">1</span>
+<span class="n">CERT_LEN_LEN</span>  <span class="o">=</span> <span class="mi">2</span>
+
+
+<div class="viewcode-block" id="CertsCell"><a class="viewcode-back" href="../../docs/cell/varlen.html#cell.varlen.CertsCell">[docs]</a><span class="k">class</span> <span class="nc">CertsCell</span><span class="p">(</span><span class="n">VarLenCell</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;.. note:: tor-spec, Section 4.2&#39;&#39;&#39;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">header</span><span class="p">,</span> <span class="n">num_certs</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">cert_bytes</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        :param :class:`~cell.varlen.VarLenCell.Header` header:</span>
+<span class="sd">            header to use with this cell</span>
+<span class="sd">        :param int num_certs: number of certificates in this cell</span>
+<span class="sd">        :param str cert_bytes: raw bytes representing the certs in this cell</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">header</span> <span class="o">=</span> <span class="n">header</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">num_certs</span> <span class="o">=</span> <span class="n">num_certs</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">cert_bytes</span> <span class="o">=</span> <span class="n">cert_bytes</span>
+
+<div class="viewcode-block" id="CertsCell.getBytes"><a class="viewcode-back" href="../../docs/cell/varlen.html#cell.varlen.CertsCell.getBytes">[docs]</a>    <span class="k">def</span> <span class="nf">getBytes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">trimmed</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Build and return raw byte string represeting this cell.</span>
+
+<span class="sd">        :param bool trimmed: ignore for varlen cells</span>
+<span class="sd">        :returns: **str** raw byte string representing this cell.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">ret</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">getBytes</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">ret</span> <span class="o">+</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;!B&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">num_certs</span><span class="p">)</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">cert_bytes</span>
+</div>
+    <span class="k">def</span> <span class="nf">_parsePayload</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Parse data and extract this cell&#39;s fields.</span>
+
+<span class="sd">        Fill in this cell&#39;s attributes.</span>
+
+<span class="sd">        :param str data: bytes to parse</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">start</span><span class="p">,</span> <span class="n">end</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">payloadRange</span><span class="p">()</span>
+        <span class="n">offset</span> <span class="o">=</span> <span class="n">start</span>
+
+        <span class="k">if</span> <span class="n">end</span> <span class="o">-</span> <span class="n">start</span> <span class="o">&lt;</span> <span class="n">CERT_TYPE_LEN</span> <span class="o">+</span> <span class="n">CERT_LEN_LEN</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;CertsCell payload was too few bytes to make a valid &quot;</span>
+            <span class="n">msg</span> <span class="o">+=</span> <span class="s">&quot;CertsCell.&quot;</span>
+            <span class="k">raise</span> <span class="n">BadPayloadData</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">num_certs</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">unpack</span><span class="p">(</span><span class="s">&#39;!B&#39;</span><span class="p">,</span>
+                                       <span class="n">data</span><span class="p">[</span><span class="n">offset</span><span class="p">:</span><span class="n">offset</span> <span class="o">+</span> <span class="n">NUM_CERT_LEN</span><span class="p">])[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">offset</span> <span class="o">+=</span> <span class="n">NUM_CERT_LEN</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">cert_bytes</span> <span class="o">=</span> <span class="s">&#39;&#39;</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_certs</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">cert_bytes</span> <span class="o">+=</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span><span class="p">:</span><span class="n">offset</span> <span class="o">+</span> <span class="n">CERT_TYPE_LEN</span><span class="p">]</span>
+                <span class="n">offset</span> <span class="o">+=</span> <span class="n">CERT_TYPE_LEN</span>
+
+                <span class="n">clen</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span><span class="p">:</span><span class="n">offset</span> <span class="o">+</span> <span class="n">CERT_LEN_LEN</span><span class="p">]</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">cert_bytes</span> <span class="o">+=</span> <span class="n">clen</span>
+                <span class="n">offset</span> <span class="o">+=</span> <span class="n">CERT_LEN_LEN</span>
+                <span class="n">clen</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">unpack</span><span class="p">(</span><span class="s">&#39;!H&#39;</span><span class="p">,</span> <span class="n">clen</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+
+                <span class="bp">self</span><span class="o">.</span><span class="n">cert_bytes</span> <span class="o">+=</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span><span class="p">:</span><span class="n">offset</span> <span class="o">+</span> <span class="n">clen</span><span class="p">]</span>
+                <span class="n">offset</span> <span class="o">+=</span> <span class="n">clen</span>
+        <span class="k">except</span> <span class="ne">IndexError</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;CertsCell payload was not enough bytes to construct &quot;</span>
+            <span class="n">msg</span> <span class="o">+=</span> <span class="s">&quot;a valid CertsCell.&quot;</span>
+            <span class="k">raise</span> <span class="n">BadPayloadData</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">fmt</span> <span class="o">=</span> <span class="s">&#39;header={}, num_certs={}, cert_bytes={}&#39;</span>
+        <span class="n">fmt</span> <span class="o">=</span> <span class="s">&#39;CertsCell({})&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">fmt</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">fmt</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="p">),</span> <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">num_certs</span><span class="p">),</span>
+                          <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">cert_bytes</span><span class="p">))</span>
+
+</div>
+<span class="n">VERSIONS_LEN</span> <span class="o">=</span> <span class="mi">2</span>
+
+
+<div class="viewcode-block" id="VersionsCell"><a class="viewcode-back" href="../../docs/cell/varlen.html#cell.varlen.VersionsCell">[docs]</a><span class="k">class</span> <span class="nc">VersionsCell</span><span class="p">(</span><span class="n">VarLenCell</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;.. note:: tor-spec, Section 4.1&#39;&#39;&#39;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">header</span><span class="p">,</span> <span class="n">versions</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        :param :class:`~cell.varlen.VarLenCell.Header` header:</span>
+<span class="sd">            header to use with this cell</span>
+<span class="sd">        :param list, int versions: Link Protocol versions the originator of</span>
+<span class="sd">            this VersionsCell claims to support</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">header</span> <span class="o">=</span> <span class="n">header</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">versions</span> <span class="o">=</span> <span class="n">versions</span>
+
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="VersionsCell.make"><a class="viewcode-back" href="../../docs/cell/varlen.html#cell.varlen.VersionsCell.make">[docs]</a>    <span class="k">def</span> <span class="nf">make</span><span class="p">(</span><span class="n">versions</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Construct and return a VersionsCell, using default values</span>
+<span class="sd">        where possible.</span>
+
+<span class="sd">        Automatically create and use an appropriate FixedLenCell.Header.</span>
+
+<span class="sd">        .. note: A VersionsCell always has len(circ_id_bytes) == 2 for</span>
+<span class="sd">            backward compatibility (tor-spec, Section 3).</span>
+
+<span class="sd">        .. note: oppy can currently only support Link Protocol versions</span>
+<span class="sd">            3 and 4, so any other versions will be rejected.</span>
+
+<span class="sd">        :param list, int versions: Link Protocol versions to indicate support</span>
+<span class="sd">            for in this VersionsCell</span>
+<span class="sd">        :returns: :class:`~cell.varlen.VersionsCell`</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">for</span> <span class="n">version</span> <span class="ow">in</span> <span class="n">versions</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">version</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">CONN_DEFS</span><span class="o">.</span><span class="n">SUPPORTED_LINK_PROTOCOLS</span><span class="p">:</span>
+                <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Tried to build a VersionsCell that supports versions &quot;</span>
+                <span class="n">msg</span> <span class="o">+=</span> <span class="s">&quot;{}, but oppy only supports versions {}.&quot;</span>
+                <span class="n">msg</span> <span class="o">=</span> <span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">versions</span><span class="p">,</span> <span class="n">CONN_DEFS</span><span class="o">.</span><span class="n">SUPPORTED_LINK_PROTOCOLS</span><span class="p">)</span>
+                <span class="k">raise</span> <span class="n">BadPayloadData</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+        <span class="n">h</span> <span class="o">=</span> <span class="n">VarLenCell</span><span class="o">.</span><span class="n">Header</span><span class="p">(</span><span class="n">circ_id</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">cmd</span><span class="o">=</span><span class="n">DEF</span><span class="o">.</span><span class="n">VERSIONS_CMD</span><span class="p">,</span>
+                              <span class="n">payload_len</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">versions</span><span class="p">)</span> <span class="o">*</span> <span class="mi">2</span><span class="p">,</span>
+                              <span class="n">link_version</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">VersionsCell</span><span class="p">(</span><span class="n">h</span><span class="p">,</span> <span class="n">versions</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="VersionsCell.getBytes"><a class="viewcode-back" href="../../docs/cell/varlen.html#cell.varlen.VersionsCell.getBytes">[docs]</a>    <span class="k">def</span> <span class="nf">getBytes</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">trimmed</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Build and return raw byte string representing this cell.</span>
+
+<span class="sd">        :param bool trimmed: ignored for varlen cells</span>
+<span class="sd">        :returns: str -- raw byte string representing this cell.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">ret</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">getBytes</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">versions</span><span class="p">)):</span>
+            <span class="n">ret</span> <span class="o">+=</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;!H&#39;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">versions</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>
+        <span class="k">return</span> <span class="n">ret</span>
+</div>
+    <span class="k">def</span> <span class="nf">_parsePayload</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Parse data and extract this cell&#39;s fields.</span>
+
+<span class="sd">        Fill in this cell&#39;s attributes.</span>
+
+<span class="sd">        :param str data: bytes to parse</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">start</span><span class="p">,</span> <span class="n">end</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">payloadRange</span><span class="p">()</span>
+        <span class="n">offset</span> <span class="o">=</span> <span class="n">start</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">versions</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">while</span> <span class="n">offset</span> <span class="o">&lt;</span> <span class="n">end</span><span class="p">:</span>
+            <span class="n">v</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">unpack</span><span class="p">(</span><span class="s">&#39;!H&#39;</span><span class="p">,</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span><span class="p">:</span><span class="n">offset</span> <span class="o">+</span> <span class="n">VERSIONS_LEN</span><span class="p">])[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">v</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">CONN_DEFS</span><span class="o">.</span><span class="n">KNOWN_LINK_PROTOCOLS</span><span class="p">:</span>
+                <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;VersionsCell claims to support an unknown Link &quot;</span>
+                <span class="n">msg</span> <span class="o">+=</span> <span class="s">&quot;Protocol version {}.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">v</span><span class="p">)</span>
+                <span class="k">raise</span> <span class="n">BadPayloadData</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">versions</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">v</span><span class="p">)</span>
+            <span class="n">offset</span> <span class="o">+=</span> <span class="n">VERSIONS_LEN</span>
+
+    <span class="k">def</span> <span class="nf">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">fmt</span> <span class="o">=</span> <span class="s">&#39;{}, versions={}&#39;</span>
+        <span class="n">fmt</span> <span class="o">=</span> <span class="s">&#39;VersionsCell({})&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">fmt</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">fmt</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="p">),</span> <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">versions</span><span class="p">))</span>
+
+</div>
+<div class="viewcode-block" id="VPaddingCell"><a class="viewcode-back" href="../../docs/cell/varlen.html#cell.varlen.VPaddingCell">[docs]</a><span class="k">class</span> <span class="nc">VPaddingCell</span><span class="p">(</span><span class="n">VarLenCell</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;.. note:: tor-spec, Section 3, 4, 7.2</span>
+
+<span class="sd">    .. note: VPadding cells have no fields, so just use fields from the</span>
+<span class="sd">        parent class.</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="k">pass</span></div>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

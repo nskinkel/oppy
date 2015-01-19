@@ -1,0 +1,231 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>cell &mdash; oppy 0.1 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <link rel="top" title="oppy 0.1 documentation" href="../../index.html" />
+    <link rel="up" title="cell" href="../cell.html" />
+    <link rel="next" title="fixedlen" href="fixedlen.html" />
+    <link rel="prev" title="cell" href="../cell.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="fixedlen.html" title="fixedlen"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="../cell.html" title="cell"
+             accesskey="P">previous</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../../docs.html" >Documentation</a> &raquo;</li>
+          <li><a href="../cell.html" accesskey="U">cell</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="module-cell.cell">
+<span id="cell"></span><h1>cell<a class="headerlink" href="#module-cell.cell" title="Permalink to this headline">¶</a></h1>
+<dl class="class">
+<dt id="cell.cell.Cell">
+<em class="property">class </em><tt class="descclassname">cell.cell.</tt><tt class="descname">Cell</tt><a class="reference internal" href="../../_modules/cell/cell.html#Cell"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.cell.Cell" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <tt class="xref py py-class docutils literal"><span class="pre">object</span></tt></p>
+<p>An abstract base class for other kinds of cells.</p>
+<dl class="method">
+<dt id="cell.cell.Cell.getPayload">
+<tt class="descname">getPayload</tt><big>(</big><big>)</big><a class="reference internal" href="../../_modules/cell/cell.html#Cell.getPayload"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.cell.Cell.getPayload" title="Permalink to this definition">¶</a></dt>
+<dd><p>Return just the payload bytes of a cell.</p>
+<p>For fixed-length cells, pad with null bytes to the appropriate length
+according to Link Protocol version. Primarily useful for encrypting or
+decrypting cells.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Returns:</th><td class="field-body"><strong>str</strong> cell payload bytes</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="cell.cell.Cell.payloadRange">
+<tt class="descname">payloadRange</tt><big>(</big><big>)</big><a class="reference internal" href="../../_modules/cell/cell.html#Cell.payloadRange"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.cell.Cell.payloadRange" title="Permalink to this definition">¶</a></dt>
+<dd><p>Return the (start, end) indices of this cell&#8217;s payload as a
+2-tuple.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Returns:</th><td class="field-body"><strong>tuple, int</strong> (start, end) payload indices.</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="staticmethod">
+<dt id="cell.cell.Cell.enoughDataForCell">
+<em class="property">static </em><tt class="descname">enoughDataForCell</tt><big>(</big><em>data</em>, <em>link_version=3</em><big>)</big><a class="reference internal" href="../../_modules/cell/cell.html#Cell.enoughDataForCell"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.cell.Cell.enoughDataForCell" title="Permalink to this definition">¶</a></dt>
+<dd><p>Return True iff the str <strong>data</strong> contains enough bytes to build a
+cell.</p>
+<p>The command byte is checked to determine the general type of
+cell to look for. For fixed-length cells, this is enough to know
+how much data is required. For variable-length cells, additionally
+check the length bytes.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>data</strong> (<em>str</em>) &#8211; The raw string to check.</li>
+<li><strong>link_version</strong> (<em>int</em>) &#8211; Link Protocol version in use. In version
+3, 512 bytes are required for a fixed-length cell. In version
+4, 514 bytes are required.</li>
+</ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first last"><strong>bool</strong> that&#8217;s <strong>True</strong> iff data is long enough to
+build the type of cell indicated by the command byte.</p>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="staticmethod">
+<dt id="cell.cell.Cell.parse">
+<em class="property">static </em><tt class="descname">parse</tt><big>(</big><em>data</em>, <em>link_version=3</em>, <em>encrypted=False</em><big>)</big><a class="reference internal" href="../../_modules/cell/cell.html#Cell.parse"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.cell.Cell.parse" title="Permalink to this definition">¶</a></dt>
+<dd><p>Return an instance of a cell constructed from the str data.</p>
+<p>If encrypted is True and the type if cell is RELAY or RELAY_EARLY,
+don&#8217;t try to parse the payload and just return a
+<tt class="xref py py-class docutils literal"><span class="pre">EncryptedCell</span></tt>.
+Otherwise, instantiate and return the appropriate cell type.</p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last"><em>data</em> str is not modified.</p>
+</div>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>data</strong> (<em>str</em>) &#8211; raw bytes to parse and extract a cell from</li>
+<li><strong>link_verison</strong> (<em>int</em>) &#8211; Link Protocol version in use. For fixed-
+length cells, this parameter dictates whether we expect 512
+bytes (Link Protocol &lt;= 3) or 514 bytes.</li>
+<li><strong>encrypted</strong> (<em>bool</em>) &#8211; whether or not we think this cell is
+encrypted. If True and we see a RELAY or RELAY_EARLY command
+do not attempt to parse payload.</li>
+</ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first last">instantiated cell type as dictated by the command byte,
+parsed and extracted from data.</p>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="class">
+<dt id="cell.cell.Cell.Header">
+<em class="property">class </em><tt class="descname">Header</tt><a class="reference internal" href="../../_modules/cell/cell.html#Cell.Header"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.cell.Cell.Header" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <tt class="xref py py-class docutils literal"><span class="pre">object</span></tt></p>
+<p>A dummy header type that exists only to be overriden by classes
+that inherit from <tt class="xref py py-class docutils literal"><span class="pre">Cell</span></tt>.</p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="../cell.html"
+                        title="previous chapter">cell</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="fixedlen.html"
+                        title="next chapter">fixedlen</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="../../_sources/docs/cell/cell.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="fixedlen.html" title="fixedlen"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="../cell.html" title="cell"
+             >previous</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../../docs.html" >Documentation</a> &raquo;</li>
+          <li><a href="../cell.html" >cell</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

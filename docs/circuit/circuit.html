@@ -1,0 +1,362 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>circuit &mdash; oppy 0.1 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <link rel="top" title="oppy 0.1 documentation" href="../../index.html" />
+    <link rel="up" title="circuit" href="../circuit.html" />
+    <link rel="next" title="ntorfsm" href="ntorfsm.html" />
+    <link rel="prev" title="circuitmanager" href="circuitmanager.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="ntorfsm.html" title="ntorfsm"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="circuitmanager.html" title="circuitmanager"
+             accesskey="P">previous</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../../docs.html" >Documentation</a> &raquo;</li>
+          <li><a href="../circuit.html" accesskey="U">circuit</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="module-circuit.circuit">
+<span id="circuit"></span><h1>circuit<a class="headerlink" href="#module-circuit.circuit" title="Permalink to this headline">¶</a></h1>
+<div class="topic">
+<p class="topic-title first">Details</p>
+<p>Circuits are channels through the Tor network through which data is
+written and received.</p>
+<p>Circuits have a few jobs:</p>
+<blockquote>
+<div><ul class="simple">
+<li>Get a valid path of relays through the Tor network (circuits
+received some path_constraints, but it&#8217;s up to each circuit
+to build it&#8217;s own path)</li>
+<li>Build the path by extending the circuit one hop at a time</li>
+<li>Derive shared key material for each node on the path</li>
+<li>Encrypt outgoing cells and decrypt incoming cells</li>
+<li>Process incoming control cells to manage circuit state</li>
+<li>Initiate new stream connections</li>
+<li>Process incoming data cells and pass data to associated streams</li>
+<li>Do some flow-control management</li>
+<li>Handle different ways of circuit tear-down depending on the
+current state and why a circuit is being torn down</li>
+</ul>
+</div></blockquote>
+</div>
+<dl class="class">
+<dt id="circuit.circuit.Circuit">
+<em class="property">class </em><tt class="descclassname">circuit.circuit.</tt><tt class="descname">Circuit</tt><big>(</big><em>cid</em>, <em>path_constraints</em><big>)</big><a class="reference internal" href="../../_modules/circuit/circuit.html#Circuit"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#circuit.circuit.Circuit" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <tt class="xref py py-class docutils literal"><span class="pre">object</span></tt></p>
+<dl class="method">
+<dt id="circuit.circuit.Circuit.writeData">
+<tt class="descname">writeData</tt><big>(</big><em>data</em>, <em>stream_id</em><big>)</big><a class="reference internal" href="../../_modules/circuit/circuit.html#Circuit.writeData"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#circuit.circuit.Circuit.writeData" title="Permalink to this definition">¶</a></dt>
+<dd><p>Put a tuple of (data, stream_id) on this circuit&#8217;s write_queue.</p>
+<p>Called by stream&#8217;s when they want to write data to this circuit.</p>
+<div class="admonition warning">
+<p class="first admonition-title">Warning</p>
+<p class="last">writeData() requires that <em>data</em> can fit in a single
+relay cell. The caller should take care to split data into
+properly sized chunks.</p>
+</div>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first last simple">
+<li><strong>data</strong> (<em>str</em>) &#8211; data string to write to this circuit</li>
+<li><strong>stream_id</strong> (<em>int</em>) &#8211; id of the stream writing this data</li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="circuit.circuit.Circuit.recvCell">
+<tt class="descname">recvCell</tt><big>(</big><em>cell</em><big>)</big><a class="reference internal" href="../../_modules/circuit/circuit.html#Circuit.recvCell"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#circuit.circuit.Circuit.recvCell" title="Permalink to this definition">¶</a></dt>
+<dd><p>Put the incoming cell on this circuit&#8217;s read_queue to be processed.</p>
+<p>Called be a connection when it receives a cell addressed to this
+circuit.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>cell</strong> (<em>cell</em>) &#8211; incoming cell that was received from the network</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="circuit.circuit.Circuit.writeCell">
+<tt class="descname">writeCell</tt><big>(</big><em>cell</em><big>)</big><a class="reference internal" href="../../_modules/circuit/circuit.html#Circuit.writeCell"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#circuit.circuit.Circuit.writeCell" title="Permalink to this definition">¶</a></dt>
+<dd><p>Write a cell to this circuit&#8217;s connection.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>cell</strong> (<em>cell</em>) &#8211; cell to write to this circuit&#8217;s connection</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="circuit.circuit.Circuit.canHandleRequest">
+<tt class="descname">canHandleRequest</tt><big>(</big><em>request</em><big>)</big><a class="reference internal" href="../../_modules/circuit/circuit.html#Circuit.canHandleRequest"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#circuit.circuit.Circuit.canHandleRequest" title="Permalink to this definition">¶</a></dt>
+<dd><p>Return <strong>True</strong> if this circuit can (probably/possibly) handle
+the <em>request</em>.</p>
+<p>If this circuit is pending we may not have a relay exit relay whose
+exit policy we can check, so make a guess and return True if the
+request is of the same type as this circuit. Always return True if
+this request is a host type request (this is probably wrong). If the
+circuit is open and we do have an exit policy to check, then return
+whether or not this circuit&#8217;s exit relay&#8217;s exit policy claims to
+support this request.</p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">For host type requests, I&#8217;d like to just check the exit
+policy of the exit relay to see if it allows exits to the
+desired port. However, I can&#8217;t seem to get stem&#8217;s
+exit_policy.can_exit_to() function to work when it&#8217;s passed only
+a port with no IP address. I&#8217;m not sure if this is a bug in
+stem or how I&#8217;m using it. Ideally, in the case of host type
+requests, we&#8217;d check if the exit relay&#8217;s exit policy claims to
+support exits to the requested port. Currently stem&#8217;s
+exit_policy.can_exit_to() always returns False when passed just
+a port as an argument (at least when it&#8217;s loaded with real
+exit policies from server descriptors).</p>
+</div>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>request</strong> (<em>oppy.util.exitrequest.ExitRequest</em>) &#8211; the request to
+check if this circuit can handle</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><strong>bool</strong> <strong>True</strong> if this circuit thinks it can handle
+the request, False otherwise</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="circuit.circuit.Circuit.unregisterStream">
+<tt class="descname">unregisterStream</tt><big>(</big><em>stream</em><big>)</big><a class="reference internal" href="../../_modules/circuit/circuit.html#Circuit.unregisterStream"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#circuit.circuit.Circuit.unregisterStream" title="Permalink to this definition">¶</a></dt>
+<dd><p>Unregister <em>stream</em> from this circuit.</p>
+<p>Remove the stream from this circuit&#8217;s stream map and send a
+RelayEndCell. If the number of streams on this circuit drops to
+zero, check with the circuit manager to see if this circuit should
+be destroyed. If so, tear down the circuit.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>stream</strong> (<em>oppy.stream.stream.Stream</em>) &#8211; stream to unregister</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="circuit.circuit.Circuit.initiateStream">
+<tt class="descname">initiateStream</tt><big>(</big><em>stream</em><big>)</big><a class="reference internal" href="../../_modules/circuit/circuit.html#Circuit.initiateStream"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#circuit.circuit.Circuit.initiateStream" title="Permalink to this definition">¶</a></dt>
+<dd><p>Initiate a new stream by sending a RelayBeginCell.</p>
+<p>Create the begin cell, encrypt it, and immediately write it to this
+circuit&#8217;s connection.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>stream</strong> (<em>oppy.stream.stream.Stream</em>) &#8211; stream on behalf of which
+we&#8217;re sending a RelayBeginCell</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="circuit.circuit.Circuit.registerStream">
+<tt class="descname">registerStream</tt><big>(</big><em>stream</em><big>)</big><a class="reference internal" href="../../_modules/circuit/circuit.html#Circuit.registerStream"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#circuit.circuit.Circuit.registerStream" title="Permalink to this definition">¶</a></dt>
+<dd><p>Register the new <em>stream</em> on this circuit.</p>
+<p>Set the stream&#8217;s stream_id and add it to this circuit&#8217;s stream map.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>stream</strong> (<em>oppy.stream.stream.Stream</em>) &#8211; stream to add to this circuit</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="circuit.circuit.Circuit.sendStreamSendMe">
+<tt class="descname">sendStreamSendMe</tt><big>(</big><em>stream_id</em><big>)</big><a class="reference internal" href="../../_modules/circuit/circuit.html#Circuit.sendStreamSendMe"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#circuit.circuit.Circuit.sendStreamSendMe" title="Permalink to this definition">¶</a></dt>
+<dd><p>Send a stream-level RelaySendMe cell with its stream_id equal to
+<em>stream_id</em>.</p>
+<p>Construct the send me cell, encrypt it, and immediately write it to
+this circuit&#8217;s connection.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>stream_id</strong> (<em>int</em>) &#8211; stream_id to use in the RelaySendMeCell</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="circuit.circuit.Circuit.destroyCircuitProtocolViolation">
+<tt class="descname">destroyCircuitProtocolViolation</tt><big>(</big><em>cell</em><big>)</big><a class="reference internal" href="../../_modules/circuit/circuit.html#Circuit.destroyCircuitProtocolViolation"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#circuit.circuit.Circuit.destroyCircuitProtocolViolation" title="Permalink to this definition">¶</a></dt>
+<dd><p>Destroy a circuit because the Tor protocol was violated.</p>
+<p>Send a DestroyCell and close the circuit.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>cell</strong> (<em>cell</em>) &#8211; received cell that violated the Tor protocol.</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="circuit.circuit.Circuit.destroyCircuitFromRelay">
+<tt class="descname">destroyCircuitFromRelay</tt><big>(</big><em>cell</em><big>)</big><a class="reference internal" href="../../_modules/circuit/circuit.html#Circuit.destroyCircuitFromRelay"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#circuit.circuit.Circuit.destroyCircuitFromRelay" title="Permalink to this definition">¶</a></dt>
+<dd><p>Called when a DestroyCell is received from a relay on
+this circuit&#8217;s path.</p>
+<p>Immediately close the circuit. We don&#8217;t need to send a DestroyCell
+in this case.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>cell</strong> (<em>cell</em>) &#8211; either the DestroyCell or the RelayTruncatedCell
+that was received.</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="circuit.circuit.Circuit.destroyCircuitFromManager">
+<tt class="descname">destroyCircuitFromManager</tt><big>(</big><big>)</big><a class="reference internal" href="../../_modules/circuit/circuit.html#Circuit.destroyCircuitFromManager"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#circuit.circuit.Circuit.destroyCircuitFromManager" title="Permalink to this definition">¶</a></dt>
+<dd><p>Called by the circuit manager when it decides to destroy this
+circuit.</p>
+<p>Send a destroy cell and notify this circuit&#8217;s connection that this
+circuit is now closed.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="circuit.circuit.Circuit.destroyCircuitFromConnection">
+<tt class="descname">destroyCircuitFromConnection</tt><big>(</big><big>)</big><a class="reference internal" href="../../_modules/circuit/circuit.html#Circuit.destroyCircuitFromConnection"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#circuit.circuit.Circuit.destroyCircuitFromConnection" title="Permalink to this definition">¶</a></dt>
+<dd><p>Called when a connection closes this circuit (usually because
+the connection went down).</p>
+<p>Primarily called when we lose the TLS connection to our connection
+object.  Do a &#8216;hard&#8217; destroy and immediately close all associated
+streams.  Do not send a destroy cell.</p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="circuitmanager.html"
+                        title="previous chapter">circuitmanager</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="ntorfsm.html"
+                        title="next chapter">ntorfsm</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="../../_sources/docs/circuit/circuit.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="ntorfsm.html" title="ntorfsm"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="circuitmanager.html" title="circuitmanager"
+             >previous</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../../docs.html" >Documentation</a> &raquo;</li>
+          <li><a href="../circuit.html" >circuit</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

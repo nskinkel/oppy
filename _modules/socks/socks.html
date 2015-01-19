@@ -1,0 +1,368 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>socks.socks &mdash; oppy 0.1 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <link rel="top" title="oppy 0.1 documentation" href="../../index.html" />
+    <link rel="up" title="Module code" href="../index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for socks.socks</h1><div class="highlight"><pre>
+<span class="c"># Copyright 2014, 2015, Nik Kinkel and David Johnston</span>
+<span class="c"># See LICENSE for licensing information</span>
+
+<span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">.. topic:: Details</span>
+
+<span class="sd">    OppySOCKSProtocol instances handle the initial SOCKS 5 handshake with</span>
+<span class="sd">    client applications, passing the remote resource request to a stream,</span>
+<span class="sd">    and then forwarding data back and forth between a circuit and a local</span>
+<span class="sd">    application.</span>
+
+<span class="sd">    An OppySOCKSProtocol instance is assigned to each incoming request on</span>
+<span class="sd">    the SOCKS port, and upon successful handshake negotiaton a stream is</span>
+<span class="sd">    created for the client application&#39;s request.</span>
+
+<span class="sd">    Once the client has made a successful request, this object goes into the</span>
+<span class="sd">    forwarding state in which it:</span>
+
+<span class="sd">        - forwards all subsequent data from the client to the remote resource</span>
+<span class="sd">          (through a circuit)</span>
+<span class="sd">        - sends all data written to this object&#39;s writeData() method to the</span>
+<span class="sd">          client application</span>
+
+<span class="sd">    Throughout this process, this object communicates with the client</span>
+<span class="sd">    application via transport, as usual for Twisted Protocol objects.</span>
+
+<span class="sd">&#39;&#39;&#39;</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">struct</span>
+
+<span class="kn">from</span> <span class="nn">twisted.internet.protocol</span> <span class="kn">import</span> <span class="n">Protocol</span><span class="p">,</span> <span class="n">ServerFactory</span>
+
+<span class="kn">from</span> <span class="nn">oppy.stream.stream</span> <span class="kn">import</span> <span class="n">Stream</span>
+<span class="kn">from</span> <span class="nn">oppy.util.exitrequest</span> <span class="kn">import</span> <span class="n">ExitRequest</span>
+<span class="kn">from</span> <span class="nn">oppy.util.tools</span> <span class="kn">import</span> <span class="n">enum</span>
+
+
+<span class="n">VER</span> <span class="o">=</span> <span class="s">&quot;</span><span class="se">\x05</span><span class="s">&quot;</span>
+<span class="n">RSV</span> <span class="o">=</span> <span class="s">&quot;</span><span class="se">\x00</span><span class="s">&quot;</span>
+
+
+<span class="c"># supported authentication methods</span>
+<span class="n">NO_AUTH_REQUIRED</span>        <span class="o">=</span> <span class="s">&quot;</span><span class="se">\x00</span><span class="s">&quot;</span>
+<span class="n">NO_ACCEPTABLE_METHODS</span>   <span class="o">=</span> <span class="s">&quot;</span><span class="se">\xFF</span><span class="s">&quot;</span>
+
+
+<span class="c"># SOCKS commands</span>
+<span class="n">CONNECT</span> <span class="o">=</span> <span class="s">&quot;</span><span class="se">\x01</span><span class="s">&quot;</span>
+<span class="n">BIND</span>    <span class="o">=</span> <span class="s">&quot;</span><span class="se">\x02</span><span class="s">&quot;</span>
+<span class="n">UDP</span>     <span class="o">=</span> <span class="s">&quot;</span><span class="se">\x03</span><span class="s">&quot;</span>
+
+
+<span class="c"># SOCKS replies</span>
+<span class="n">SUCCEEDED</span>                   <span class="o">=</span> <span class="s">&quot;</span><span class="se">\x00</span><span class="s">&quot;</span>
+<span class="n">SOCKS_FAILURE</span>               <span class="o">=</span> <span class="s">&quot;</span><span class="se">\x01</span><span class="s">&quot;</span>
+<span class="n">NETWORK_FAILURE</span>             <span class="o">=</span> <span class="s">&quot;</span><span class="se">\x02</span><span class="s">&quot;</span>
+<span class="n">NETWORK_UNREACHABLE</span>         <span class="o">=</span> <span class="s">&quot;</span><span class="se">\x03</span><span class="s">&quot;</span>
+<span class="n">HOST_UNREACHABLE</span>            <span class="o">=</span> <span class="s">&quot;</span><span class="se">\x04</span><span class="s">&quot;</span>
+<span class="n">CONNECTION_REFUSED</span>          <span class="o">=</span> <span class="s">&quot;</span><span class="se">\x05</span><span class="s">&quot;</span>
+<span class="n">TTL_EXPIRED</span>                 <span class="o">=</span> <span class="s">&quot;</span><span class="se">\x06</span><span class="s">&quot;</span>
+<span class="n">COMMAND_NOT_SUPPORTED</span>       <span class="o">=</span> <span class="s">&quot;</span><span class="se">\x07</span><span class="s">&quot;</span>
+<span class="n">ADDRESS_TYPE_NOT_SUPPORTED</span>  <span class="o">=</span> <span class="s">&quot;</span><span class="se">\x08</span><span class="s">&quot;</span>
+
+
+<span class="c"># SOCKS address types</span>
+<span class="n">IPv4</span>        <span class="o">=</span> <span class="s">&quot;</span><span class="se">\x01</span><span class="s">&quot;</span>
+<span class="n">DOMAIN_NAME</span> <span class="o">=</span> <span class="s">&quot;</span><span class="se">\x03</span><span class="s">&quot;</span>
+<span class="n">IPv6</span>        <span class="o">=</span> <span class="s">&quot;</span><span class="se">\x04</span><span class="s">&quot;</span>
+
+
+<span class="n">State</span> <span class="o">=</span> <span class="n">enum</span><span class="p">(</span>
+    <span class="n">HANDSHAKE</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+    <span class="n">REQUEST</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+    <span class="n">FORWARDING</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+<span class="p">)</span>
+
+
+<div class="viewcode-block" id="OppySOCKSProtocol"><a class="viewcode-back" href="../../docs/socks/socks.html#socks.socks.OppySOCKSProtocol">[docs]</a><span class="k">class</span> <span class="nc">OppySOCKSProtocol</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;Do SOCKS 5 handshake and forward local traffic to streams.&#39;&#39;&#39;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">state</span> <span class="o">=</span> <span class="n">State</span><span class="o">.</span><span class="n">HANDSHAKE</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">request</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="c"># An `oppy.stream.stream` object over which the SOCKS client&#39;s data</span>
+        <span class="c"># will be forwarded. This will be set by the time that state has</span>
+        <span class="c"># become forwarding</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stream</span> <span class="o">=</span> <span class="bp">None</span>
+
+<div class="viewcode-block" id="OppySOCKSProtocol.dataReceived"><a class="viewcode-back" href="../../docs/socks/socks.html#socks.socks.OppySOCKSProtocol.dataReceived">[docs]</a>    <span class="k">def</span> <span class="nf">dataReceived</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Either handle an incoming SOCKS handshake, make a new stream</span>
+<span class="sd">        request, or forward application data on to a stream.</span>
+
+<span class="sd">        Called when data is received from a local application.</span>
+
+<span class="sd">        :param str data: data that was received</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span> <span class="o">==</span> <span class="n">State</span><span class="o">.</span><span class="n">HANDSHAKE</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_handleHandshake</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">state</span> <span class="o">==</span> <span class="n">State</span><span class="o">.</span><span class="n">REQUEST</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_handleRequest</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">stream</span><span class="o">.</span><span class="n">writeData</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="OppySOCKSProtocol.writeData"><a class="viewcode-back" href="../../docs/socks/socks.html#socks.socks.OppySOCKSProtocol.writeData">[docs]</a>    <span class="k">def</span> <span class="nf">writeData</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Write received *data* to local client application.</span>
+
+<span class="sd">        :param str data: data to write</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">transport</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="OppySOCKSProtocol.closeFromStream"><a class="viewcode-back" href="../../docs/socks/socks.html#socks.socks.OppySOCKSProtocol.closeFromStream">[docs]</a>    <span class="k">def</span> <span class="nf">closeFromStream</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Lose this transports local connection.</span>
+
+<span class="sd">        Called by the attached stream when we want to signal to a local</span>
+<span class="sd">        application that this connection has closed.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">transport</span><span class="o">.</span><span class="n">loseConnection</span><span class="p">()</span>
+</div>
+    <span class="k">def</span> <span class="nf">_handleHandshake</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Check for supported versions and methods in the SOCKS 5 handshake.</span>
+
+<span class="sd">        If we get a good version and a method we can support, send back</span>
+<span class="sd">        a SUCCESS response to the client and advance to a state expecting</span>
+<span class="sd">        a connection request.</span>
+
+<span class="sd">        .. warning:: oppy only supports the NO_AUTH method.</span>
+
+<span class="sd">        :param str data: handshake data</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">VER_LEN</span> <span class="o">=</span> <span class="mi">1</span>
+        <span class="n">NMETHODS_LEN</span> <span class="o">=</span> <span class="mi">1</span>
+        <span class="n">offset</span> <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="n">version</span> <span class="o">=</span> <span class="n">data</span><span class="p">[:</span> <span class="n">VER_LEN</span><span class="p">]</span>
+        <span class="n">offset</span> <span class="o">+=</span> <span class="n">VER_LEN</span>
+        <span class="n">nmethods</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span> <span class="p">:</span> <span class="n">offset</span> <span class="o">+</span> <span class="n">NMETHODS_LEN</span><span class="p">]</span>
+        <span class="n">offset</span> <span class="o">+=</span> <span class="n">NMETHODS_LEN</span>
+
+        <span class="k">if</span> <span class="n">version</span> <span class="o">!=</span> <span class="n">VER</span><span class="p">:</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s">&quot;Unsupported SOCKS version: {}.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">version</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">transport</span><span class="o">.</span><span class="n">loseConnection</span><span class="p">()</span>
+            <span class="k">return</span>
+
+        <span class="k">if</span> <span class="n">nmethods</span> <span class="o">==</span> <span class="s">&quot;</span><span class="se">\x00</span><span class="s">&quot;</span><span class="p">:</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s">&quot;No SOCKS methods received.&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">transport</span><span class="o">.</span><span class="n">loseConnection</span><span class="p">()</span>
+            <span class="k">return</span>
+
+        <span class="n">_nmethods</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">unpack</span><span class="p">(</span><span class="s">&quot;!B&quot;</span><span class="p">,</span> <span class="n">nmethods</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">methods</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span> <span class="p">:</span> <span class="n">offset</span> <span class="o">+</span> <span class="n">_nmethods</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="n">NO_AUTH_REQUIRED</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">methods</span><span class="p">:</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s">&quot;SOCKS client does not support NO_AUTH method.&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">transport</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">VER</span> <span class="o">+</span> <span class="n">NO_ACCEPTABLE_METHODS</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">transport</span><span class="o">.</span><span class="n">loseConnection</span><span class="p">()</span>
+            <span class="k">return</span>
+
+        <span class="c"># for now, always use NO_AUTH method</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">transport</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">VER</span> <span class="o">+</span> <span class="n">NO_AUTH_REQUIRED</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">state</span> <span class="o">=</span> <span class="n">State</span><span class="o">.</span><span class="n">REQUEST</span>
+
+    <span class="k">def</span> <span class="nf">_handleRequest</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Process an incoming connection request and assign the request</span>
+<span class="sd">        to an oppy.stream.stream.Stream.</span>
+
+<span class="sd">        Send a SUCCESS reply to the client and advance to the FORWARDING</span>
+<span class="sd">        state if we get a good request.</span>
+
+<span class="sd">        :param str data: incoming request data to process</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">VER_LEN</span> <span class="o">=</span> <span class="mi">1</span>
+        <span class="n">CMD_LEN</span> <span class="o">=</span> <span class="mi">1</span>
+        <span class="n">RSV_LEN</span> <span class="o">=</span> <span class="mi">1</span>
+        <span class="n">ADDR_TYPE_LEN</span> <span class="o">=</span> <span class="mi">1</span>
+        <span class="n">offset</span> <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="n">ver</span> <span class="o">=</span> <span class="n">data</span><span class="p">[:</span> <span class="n">VER_LEN</span><span class="p">]</span>
+        <span class="n">offset</span> <span class="o">+=</span> <span class="n">VER_LEN</span>
+        <span class="n">cmd</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span> <span class="p">:</span> <span class="n">offset</span> <span class="o">+</span> <span class="n">CMD_LEN</span><span class="p">]</span>
+        <span class="n">offset</span> <span class="o">+=</span> <span class="n">CMD_LEN</span>
+        <span class="n">rsv</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span> <span class="p">:</span> <span class="n">offset</span> <span class="o">+</span> <span class="n">RSV_LEN</span><span class="p">]</span>
+        <span class="n">offset</span> <span class="o">+=</span> <span class="n">RSV_LEN</span>
+        <span class="n">addr_type</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span> <span class="p">:</span> <span class="n">offset</span> <span class="o">+</span> <span class="n">ADDR_TYPE_LEN</span><span class="p">]</span>
+        <span class="n">offset</span> <span class="o">+=</span> <span class="n">ADDR_TYPE_LEN</span>
+
+        <span class="k">if</span> <span class="n">ver</span> <span class="o">!=</span> <span class="n">VER</span><span class="p">:</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s">&quot;Unsupported SOCKS version: {}.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">ver</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_sendReply</span><span class="p">(</span><span class="n">SOCKS_FAILURE</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">transport</span><span class="o">.</span><span class="n">loseConnection</span><span class="p">()</span>
+            <span class="k">return</span>
+
+        <span class="k">if</span> <span class="n">cmd</span> <span class="o">!=</span> <span class="n">CONNECT</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;SOCKS client tried an unsupported request: {}.&quot;</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">cmd</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_sendReply</span><span class="p">(</span><span class="n">COMMAND_NOT_SUPPORTED</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">transport</span><span class="o">.</span><span class="n">loseConnection</span><span class="p">()</span>
+            <span class="k">return</span>
+
+        <span class="k">if</span> <span class="n">rsv</span> <span class="o">!=</span> <span class="n">RSV</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Reserved byte was non-zero in SOCKS client request.&quot;</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_sendReply</span><span class="p">(</span><span class="n">SOCKS_FAILURE</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">transport</span><span class="o">.</span><span class="n">loseConnection</span><span class="p">()</span>
+            <span class="k">return</span>
+
+        <span class="n">IPv4_LEN</span> <span class="o">=</span> <span class="mi">4</span>
+        <span class="n">IPv6_LEN</span> <span class="o">=</span> <span class="mi">16</span>
+        <span class="n">PORT_LEN</span> <span class="o">=</span> <span class="mi">2</span>
+
+        <span class="k">if</span> <span class="n">addr_type</span> <span class="o">==</span> <span class="n">IPv4</span><span class="p">:</span>
+            <span class="n">addr</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span> <span class="p">:</span> <span class="n">offset</span> <span class="o">+</span> <span class="n">IPv4_LEN</span><span class="p">]</span>
+            <span class="n">offset</span> <span class="o">+=</span> <span class="n">IPv4_LEN</span>
+            <span class="n">port</span> <span class="o">=</span> <span class="n">port</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span> <span class="p">:</span> <span class="n">offset</span> <span class="o">+</span> <span class="n">PORT_LEN</span><span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">request</span> <span class="o">=</span> <span class="n">ExitRequest</span><span class="p">(</span><span class="n">port</span><span class="p">,</span> <span class="n">addr</span><span class="o">=</span><span class="n">addr</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">addr_type</span> <span class="o">==</span> <span class="n">DOMAIN_NAME</span><span class="p">:</span>
+            <span class="n">length</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">unpack</span><span class="p">(</span><span class="s">&quot;!B&quot;</span><span class="p">,</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span><span class="p">])[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="c"># hostname length is 1 byte</span>
+            <span class="n">offset</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="n">host</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span> <span class="p">:</span> <span class="n">offset</span> <span class="o">+</span> <span class="n">length</span><span class="p">]</span>
+            <span class="n">offset</span> <span class="o">+=</span> <span class="n">length</span>
+            <span class="n">port</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span> <span class="p">:</span> <span class="n">offset</span> <span class="o">+</span> <span class="n">PORT_LEN</span><span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">request</span> <span class="o">=</span> <span class="n">ExitRequest</span><span class="p">(</span><span class="n">port</span><span class="p">,</span> <span class="n">host</span><span class="o">=</span><span class="n">host</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">addr_type</span> <span class="o">==</span> <span class="n">IPv6</span><span class="p">:</span>
+            <span class="n">addr</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span> <span class="p">:</span> <span class="n">offset</span> <span class="o">+</span> <span class="n">IPv6_LEN</span><span class="p">]</span>
+            <span class="n">offset</span> <span class="o">+=</span> <span class="n">IPv6_LEN</span>
+            <span class="n">port</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">offset</span> <span class="p">:</span> <span class="n">offset</span> <span class="o">+</span> <span class="n">PORT_LEN</span><span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">request</span> <span class="o">=</span> <span class="n">ExitRequest</span><span class="p">(</span><span class="n">port</span><span class="p">,</span> <span class="n">addr</span><span class="o">=</span><span class="n">addr</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;SOCKS client made a request with unsupported address &quot;</span>
+            <span class="n">msg</span> <span class="o">+=</span> <span class="s">&quot;type: {}.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">addr_type</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_sendReply</span><span class="p">(</span><span class="n">ADDRESS_TYPE_NOT_SUPPORTED</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">transport</span><span class="o">.</span><span class="n">loseConnection</span><span class="p">()</span>
+            <span class="k">return</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">stream</span> <span class="o">=</span> <span class="n">Stream</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">request</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">state</span> <span class="o">=</span> <span class="n">State</span><span class="o">.</span><span class="n">FORWARDING</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_sendReply</span><span class="p">(</span><span class="n">SUCCEEDED</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_sendReply</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">REP</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Send a valid SOCKS 5 reply to a local client.</span>
+
+<span class="sd">        .. note:: We currently always use 127.0.0.1 for the address</span>
+<span class="sd">        and 0 for the port.</span>
+
+<span class="sd">        :param str REP: reply to send</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="c"># 127.0.0.1</span>
+        <span class="n">ADDR</span> <span class="o">=</span> <span class="s">&quot;</span><span class="se">\x7f\x00\x00\x01</span><span class="s">&quot;</span>
+        <span class="c"># port 0 for localhost</span>
+        <span class="n">PORT</span> <span class="o">=</span> <span class="s">&quot;</span><span class="se">\x00\x00</span><span class="s">&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">transport</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">VER</span> <span class="o">+</span> <span class="n">REP</span> <span class="o">+</span> <span class="n">RSV</span> <span class="o">+</span> <span class="n">IPv4</span> <span class="o">+</span> <span class="n">ADDR</span> <span class="o">+</span> <span class="n">PORT</span><span class="p">)</span>
+
+<div class="viewcode-block" id="OppySOCKSProtocol.connectionLost"><a class="viewcode-back" href="../../docs/socks/socks.html#socks.socks.OppySOCKSProtocol.connectionLost">[docs]</a>    <span class="k">def</span> <span class="nf">connectionLost</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reason</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;If we have been assigned a good stream, just log that we&#39;ve</span>
+<span class="sd">        lost the connection.</span>
+
+<span class="sd">        :param reason reason: reason this connection was lost</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="c"># sometimes, if stream creation is attempted before circuit</span>
+        <span class="c"># manager exists, a SOCKS object will get a stream that has no</span>
+        <span class="c"># stream id. in this case just skip logging and closing that</span>
+        <span class="c"># stream and let it die</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">stream</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span> <span class="ow">and</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stream</span><span class="p">,</span> <span class="s">&#39;stream_id&#39;</span><span class="p">):</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;SOCKS on stream {} is done with its local connection.&quot;</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stream</span><span class="o">.</span><span class="n">stream_id</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">stream</span><span class="o">.</span><span class="n">closeFromSOCKS</span><span class="p">()</span>
+</div>
+<div class="viewcode-block" id="OppySOCKSProtocol.connectionMade"><a class="viewcode-back" href="../../docs/socks/socks.html#socks.socks.OppySOCKSProtocol.connectionMade">[docs]</a>    <span class="k">def</span> <span class="nf">connectionMade</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Log that SOCKS has made a local connection and wait for an</span>
+<span class="sd">        incoming handshake request.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&quot;SOCKS made a local connection.&quot;</span><span class="p">)</span>
+
+</div></div>
+<div class="viewcode-block" id="OppySOCKSProtocolFactory"><a class="viewcode-back" href="../../docs/socks/socks.html#socks.socks.OppySOCKSProtocolFactory">[docs]</a><span class="k">class</span> <span class="nc">OppySOCKSProtocolFactory</span><span class="p">(</span><span class="n">ServerFactory</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;Serve *OppySOCKSProtocol* instances.&#39;&#39;&#39;</span>
+    <span class="n">protocol</span> <span class="o">=</span> <span class="n">OppySOCKSProtocol</span></div>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

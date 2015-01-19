@@ -1,0 +1,147 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Usage &mdash; oppy 0.1 documentation</title>
+    
+    <link rel="stylesheet" href="_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    './',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="top" title="oppy 0.1 documentation" href="index.html" />
+    <link rel="next" title="Simplifications and Unimplemented Functionality" href="simplifications.html" />
+    <link rel="prev" title="Installation" href="installation.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="simplifications.html" title="Simplifications and Unimplemented Functionality"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="installation.html" title="Installation"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">oppy 0.1 documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="usage">
+<span id="usage-label"></span><h1>Usage<a class="headerlink" href="#usage" title="Permalink to this headline">¶</a></h1>
+<p>oppy aims to be a fully functional Tor client and can be used just the same
+way as a regular Tor client.</p>
+<p>oppy currently supports the following command line arguments:</p>
+<div class="highlight-python"><div class="highlight"><pre>-l  --log-level     python log level, defaults to INFO
+-f  --log-file      filename to write logs to, defaults to sys.stdout
+-p  --SOCKS-port    local port for SOCKS interface to listen on
+-h  --help          print these help options
+</pre></div>
+</div>
+<p>To run oppy at the DEBUG log level on port 10050, from the oppy/oppy directory
+run:</p>
+<div class="highlight-python"><div class="highlight"><pre>$ ./oppy -l debug -p 10050
+</pre></div>
+</div>
+<p>Now just configure any local application to use this SOCKS port like you
+would for a regular tor process.</p>
+<p>oppy will print some information as it gathers network status documents and
+starts building circuits. After the first circuit opens up, oppy will be
+listening on port 10050 for incoming SOCKS 5 connections.</p>
+<p>You can tell any application that can use a SOCKS 5 proxy to use oppy (e.g.
+SSH or Firefox) - just configure that application to use SOCKS 5 on localhost
+on the port that oppy is running on.</p>
+<p>You can also tell the Tor Browser to use oppy instead of its own Tor process.</p>
+<p>If you&#8217;re using a web browser with oppy, browse to
+<a class="reference external" href="https://check.torproject.org">Tor check</a> to verify oppy is working.</p>
+<div class="admonition warning">
+<p class="first admonition-title">Warning</p>
+<p class="last">You will <strong>not</strong> get strong anonymity by running, say, vanilla Firefox
+through a tor process and using &#8220;normal&#8221; browsing habits. See
+<a class="reference external" href="https://www.torproject.org/download/download#warning">a list of warnings</a>
+for some reasons why this is not sufficient for strong anonymity.</p>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="installation.html"
+                        title="previous chapter">Installation</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="simplifications.html"
+                        title="next chapter">Simplifications and Unimplemented Functionality</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="_sources/usage.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="simplifications.html" title="Simplifications and Unimplemented Functionality"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="installation.html" title="Installation"
+             >previous</a> |</li>
+        <li><a href="index.html">oppy 0.1 documentation</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

@@ -1,0 +1,345 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>connection.connection &mdash; oppy 0.1 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <link rel="top" title="oppy 0.1 documentation" href="../../index.html" />
+    <link rel="up" title="Module code" href="../index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for connection.connection</h1><div class="highlight"><pre>
+<span class="c"># Copyright 2014, 2015, Nik Kinkel</span>
+<span class="c"># See LICENSE for licensing information</span>
+
+<span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">.. topic:: Details</span>
+
+<span class="sd">    Connection objects represent TLS connections to Tor entry nodes. Connection</span>
+<span class="sd">    objects have a few important jobs:</span>
+
+<span class="sd">        - Do the initial handshake to authenticate the entry node and negotiate</span>
+<span class="sd">          a Link Protocl version (currently oppy only supports Link Protocol</span>
+<span class="sd">          Version 3)</span>
+<span class="sd">        - Extract cells from incoming data streams and pass them to the</span>
+<span class="sd">          appropriate circuit (based on circuit ID)</span>
+<span class="sd">        - Write cells from circuits to entry nodes</span>
+<span class="sd">        - Notify all associated circuits when the connection goes down</span>
+
+<span class="sd">&#39;&#39;&#39;</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+
+<span class="kn">from</span> <span class="nn">twisted.internet.protocol</span> <span class="kn">import</span> <span class="n">Protocol</span>
+
+<span class="kn">from</span> <span class="nn">oppy.cell.cell</span> <span class="kn">import</span> <span class="n">Cell</span>
+<span class="kn">from</span> <span class="nn">oppy.cell.definitions</span> <span class="kn">import</span> <span class="n">PADDING_CMD_IDS</span>
+<span class="kn">from</span> <span class="nn">oppy.cell.exceptions</span> <span class="kn">import</span> <span class="n">NotEnoughBytes</span>
+
+<span class="kn">from</span> <span class="nn">oppy.connection.handshake.v3</span> <span class="kn">import</span> <span class="n">V3FSM</span>
+<span class="kn">from</span> <span class="nn">oppy.connection.handshake.exceptions</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">BadHandshakeState</span><span class="p">,</span>
+    <span class="n">HandshakeFailed</span><span class="p">,</span>
+    <span class="n">UnexpectedCell</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span> <span class="nn">oppy.util.tools</span> <span class="kn">import</span> <span class="n">enum</span>
+
+
+<span class="n">ConnState</span> <span class="o">=</span> <span class="n">enum</span><span class="p">(</span>
+    <span class="n">PENDING</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+    <span class="n">OPEN</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+<span class="p">)</span>
+
+
+<div class="viewcode-block" id="Connection"><a class="viewcode-back" href="../../docs/connection/connection.html#connection.connection.Connection">[docs]</a><span class="k">class</span> <span class="nc">Connection</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;A TLS connection to an entry node.&#39;&#39;&#39;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">relay</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        :param stem.descriptor.server_descriptor.RelayDescriptor relay:</span>
+<span class="sd">            relay we should create a connection to</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;Creating connection to {0}&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">relay</span><span class="o">.</span><span class="n">address</span><span class="p">))</span>
+        <span class="c"># map all circuits using this connections</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_circuit_map</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span> <span class="o">=</span> <span class="s">&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_relay</span> <span class="o">=</span> <span class="n">relay</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_handshake</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="o">=</span> <span class="n">ConnState</span><span class="o">.</span><span class="n">PENDING</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_cell_queue</span> <span class="o">=</span> <span class="p">[]</span>
+
+<div class="viewcode-block" id="Connection.writeCell"><a class="viewcode-back" href="../../docs/connection/connection.html#connection.connection.Connection.writeCell">[docs]</a>    <span class="k">def</span> <span class="nf">writeCell</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cell</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Write a cell to this connections transport.</span>
+
+<span class="sd">        If this connection is not yet open, append to the cell_queue to be</span>
+<span class="sd">        written when the connection opens up.</span>
+
+<span class="sd">        :param cell cell: cell to write</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="o">==</span> <span class="n">ConnState</span><span class="o">.</span><span class="n">OPEN</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">transport</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">cell</span><span class="o">.</span><span class="n">getBytes</span><span class="p">())</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_cell_queue</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">cell</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Connection.dataReceived"><a class="viewcode-back" href="../../docs/connection/connection.html#connection.connection.Connection.dataReceived">[docs]</a>    <span class="k">def</span> <span class="nf">dataReceived</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;We received data from the remote connection.</span>
+
+<span class="sd">        Extract cells from the data stream and send them along to be</span>
+<span class="sd">        processed.</span>
+
+<span class="sd">        :param str data: data received from remote end</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span> <span class="o">+=</span> <span class="n">data</span>
+
+        <span class="k">while</span> <span class="n">Cell</span><span class="o">.</span><span class="n">enoughDataForCell</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span><span class="p">):</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">cell</span> <span class="o">=</span> <span class="n">Cell</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span><span class="p">,</span> <span class="n">encrypted</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_deliverCell</span><span class="p">(</span><span class="n">cell</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="n">cell</span><span class="p">):]</span>
+            <span class="c"># this shouldn&#39;t happen and if it does, it&#39;s probably a bug</span>
+            <span class="k">except</span> <span class="n">NotEnoughBytes</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">))</span>
+                <span class="k">break</span>
+            <span class="c"># XXX remove len(unimplemented cell bytes) from buffer</span>
+            <span class="k">except</span> <span class="ne">NotImplementedError</span><span class="p">:</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&quot;Received a cell we can&#39;t handle yet.&quot;</span><span class="p">)</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;buffer contents:</span><span class="se">\n</span><span class="s">&#39;</span><span class="p">)</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">([</span><span class="nb">ord</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span><span class="p">])</span>
+                <span class="k">raise</span>
+            <span class="k">except</span> <span class="p">(</span><span class="n">BadHandshakeState</span><span class="p">,</span> <span class="n">HandshakeFailed</span><span class="p">,</span> <span class="n">UnexpectedCell</span><span class="p">)</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="n">e</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">closeConnection</span><span class="p">()</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span> <span class="o">=</span> <span class="s">&#39;&#39;</span>
+                <span class="k">break</span>
+</div>
+    <span class="k">def</span> <span class="nf">_deliverCell</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cell</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Deliver *cell* either to an appropriate circuit or, if the</span>
+<span class="sd">        handshake is not complete, to the handshake fsm.</span>
+
+<span class="sd">        :param cell cell: incoming cell to deliver</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="c"># just drop any padding cells</span>
+        <span class="k">if</span> <span class="n">cell</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">cmd</span> <span class="ow">in</span> <span class="n">PADDING_CMD_IDS</span><span class="p">:</span>
+            <span class="k">return</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="o">==</span> <span class="n">ConnState</span><span class="o">.</span><span class="n">OPEN</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_recvCircuitCell</span><span class="p">(</span><span class="n">cell</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_recvHandshakeCell</span><span class="p">(</span><span class="n">cell</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_recvCircuitCell</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cell</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Process an incoming cell destined for a circuit.</span>
+
+<span class="sd">        If we have a reference to the circuit with the ID indicated in the</span>
+<span class="sd">        cell, hand off this cell to that circuit. If we have no reference</span>
+<span class="sd">        to the circuit, drop the cell.</span>
+
+<span class="sd">        :param cell cell: incoming cell</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_circuit_map</span><span class="p">[</span><span class="n">cell</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">circ_id</span><span class="p">]</span><span class="o">.</span><span class="n">recvCell</span><span class="p">(</span><span class="n">cell</span><span class="p">)</span>
+        <span class="c"># drop cells to circuits we don&#39;t know about</span>
+        <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Connection {} received a cell to nonexistent circuit:&quot;</span>
+            <span class="n">msg</span> <span class="o">+=</span> <span class="s">&quot;{}.&quot;</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_relay</span><span class="o">.</span><span class="n">address</span><span class="p">,</span> <span class="n">cell</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">circ_id</span><span class="p">)</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_recvHandshakeCell</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cell</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Process an incoming cell as part of this connection&#39;s handshake.</span>
+<span class="sd">        </span>
+<span class="sd">        Immediately write any response from the handshake fsm to this</span>
+<span class="sd">        connection&#39;s transport. If any errors occur in the handshake, tear</span>
+<span class="sd">        down this connection.</span>
+
+<span class="sd">        If the handshake is completed after receiving this cell, transition</span>
+<span class="sd">        this connection&#39;s state to ConnState.OPEN and flush this connection&#39;s</span>
+<span class="sd">        queued up cells.</span>
+
+<span class="sd">        :param cell cell: incoming handshake cell</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">response</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handshake</span><span class="o">.</span><span class="n">recvCell</span><span class="p">(</span><span class="n">cell</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">))</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">closeConnection</span><span class="p">()</span>
+            <span class="k">return</span>
+
+        <span class="c"># send a handshake response if required</span>
+        <span class="k">if</span> <span class="n">response</span> <span class="ow">is</span> <span class="ow">not</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">transport</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">getBytes</span><span class="p">())</span>
+        <span class="c"># empty our queue if we&#39;re finished with the handshake</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handshake</span><span class="o">.</span><span class="n">isDone</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="o">=</span> <span class="n">ConnState</span><span class="o">.</span><span class="n">OPEN</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&#39;Completed handshake on connection: {0}&#39;</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_relay</span><span class="o">.</span><span class="n">address</span><span class="p">)</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_emptyQueue</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_handshake</span> <span class="o">=</span> <span class="bp">None</span>
+
+    <span class="k">def</span> <span class="nf">_emptyQueue</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Write any cells in this connection&#39;s queue to this connection&#39;s</span>
+<span class="sd">        transport and remove them from the queue.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">for</span> <span class="n">cell</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_cell_queue</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">writeCell</span><span class="p">(</span><span class="n">cell</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_cell_queue</span> <span class="o">=</span> <span class="bp">None</span>
+
+<div class="viewcode-block" id="Connection.connectionMade"><a class="viewcode-back" href="../../docs/connection/connection.html#connection.connection.Connection.connectionMade">[docs]</a>    <span class="k">def</span> <span class="nf">connectionMade</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Initial TLS connection made, immediately start the connection</span>
+<span class="sd">        handshake.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;Connection made to {0}.&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_relay</span><span class="o">.</span><span class="n">address</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_handshake</span> <span class="o">=</span> <span class="n">V3FSM</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">transport</span><span class="p">)</span>
+        <span class="n">cell</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_handshake</span><span class="o">.</span><span class="n">getInitiatingCell</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">transport</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">cell</span><span class="o">.</span><span class="n">getBytes</span><span class="p">())</span>
+</div>
+<div class="viewcode-block" id="Connection.addNewCircuit"><a class="viewcode-back" href="../../docs/connection/connection.html#connection.connection.Connection.addNewCircuit">[docs]</a>    <span class="k">def</span> <span class="nf">addNewCircuit</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">circuit</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Add new a new circuit to the circuit map for this connection.</span>
+
+<span class="sd">        Raise a ValueError if *circuit.circuit_id* already exists in</span>
+<span class="sd">        self._circuit_map - that means something went very wrong.</span>
+
+<span class="sd">        :param oppy.circuit.circuit.Circuit circuit: circuit to add to this</span>
+<span class="sd">            connection&#39;s circuit map</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">if</span> <span class="n">circuit</span><span class="o">.</span><span class="n">circuit_id</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_circuit_map</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Circuit with id {} already exists on connection to {}&quot;</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">circuit</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_relay</span><span class="o">.</span><span class="n">address</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_circuit_map</span><span class="p">[</span><span class="n">circuit</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">]</span> <span class="o">=</span> <span class="n">circuit</span>
+</div>
+<div class="viewcode-block" id="Connection.closeConnection"><a class="viewcode-back" href="../../docs/connection/connection.html#connection.connection.Connection.closeConnection">[docs]</a>    <span class="k">def</span> <span class="nf">closeConnection</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Close this connection and all associated circuits; notify the</span>
+<span class="sd">        connection pool.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="kn">from</span> <span class="nn">oppy.shared</span> <span class="kn">import</span> <span class="n">connection_pool</span>
+
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&quot;Closing connection to {}.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_relay</span><span class="o">.</span><span class="n">address</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_destroyAllCircuits</span><span class="p">()</span>
+        <span class="n">connection_pool</span><span class="o">.</span><span class="n">removeConnection</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_relay</span><span class="o">.</span><span class="n">fingerprint</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">transport</span><span class="o">.</span><span class="n">abortConnection</span><span class="p">()</span>
+</div>
+<div class="viewcode-block" id="Connection.connectionLost"><a class="viewcode-back" href="../../docs/connection/connection.html#connection.connection.Connection.connectionLost">[docs]</a>    <span class="k">def</span> <span class="nf">connectionLost</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">reason</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Connection to relay has been lost; close this connection and</span>
+<span class="sd">        all associated circuits; notify connection pool.</span>
+
+<span class="sd">        :param reason reason: reason this connection was lost</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="kn">from</span> <span class="nn">oppy.shared</span> <span class="kn">import</span> <span class="n">connection_pool</span>
+
+        <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Connection to {} lost: {}.&quot;</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_relay</span><span class="o">.</span><span class="n">address</span><span class="p">,</span> <span class="n">reason</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_destroyAllCircuits</span><span class="p">()</span>
+        <span class="n">connection_pool</span><span class="o">.</span><span class="n">removeConnection</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_relay</span><span class="o">.</span><span class="n">fingerprint</span><span class="p">)</span>
+</div>
+    <span class="k">def</span> <span class="nf">_destroyAllCircuits</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Destroy all circuits associated with this connection.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">for</span> <span class="n">circuit</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_circuit_map</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+            <span class="n">circuit</span><span class="o">.</span><span class="n">destroyCircuitFromConnection</span><span class="p">()</span>
+
+<div class="viewcode-block" id="Connection.circuitDestroyed"><a class="viewcode-back" href="../../docs/connection/connection.html#connection.connection.Connection.circuitDestroyed">[docs]</a>    <span class="k">def</span> <span class="nf">circuitDestroyed</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">circuit_id</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;The circuit with *circuit_id* has been destroyed.</span>
+
+<span class="sd">        Remove this circuit from this connection&#39;s circuit map if we know</span>
+<span class="sd">        about it. If there are no remaining circuit&#39;s using this connection,</span>
+<span class="sd">        ask the connection pool if this connection should be closed and, if</span>
+<span class="sd">        so, close this connection.</span>
+
+<span class="sd">        :param int circuit_id: id of the circuit that was destroyed</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="kn">from</span> <span class="nn">oppy.shared</span> <span class="kn">import</span> <span class="n">connection_pool</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">_circuit_map</span><span class="p">[</span><span class="n">circuit_id</span><span class="p">]</span>
+        <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Connection to {} was notified that circuit {} was destroyed&quot;</span>
+            <span class="n">msg</span> <span class="o">+=</span> <span class="s">&quot;, but connection has no reference to circuit {}.&quot;</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_relay</span><span class="o">.</span><span class="n">address</span><span class="p">,</span> <span class="n">circuit_id</span><span class="p">,</span> <span class="n">circuit_id</span><span class="p">)</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_circuit_map</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">fprint</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_relay</span><span class="o">.</span><span class="n">fingerprint</span>
+            <span class="k">if</span> <span class="n">connection_pool</span><span class="o">.</span><span class="n">shouldDestroyConnection</span><span class="p">(</span><span class="n">fprint</span><span class="p">)</span> <span class="ow">is</span> <span class="bp">True</span><span class="p">:</span>
+                <span class="n">connection_pool</span><span class="o">.</span><span class="n">removeConnection</span><span class="p">(</span><span class="n">fprint</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">closeConnection</span><span class="p">()</span></div></div>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

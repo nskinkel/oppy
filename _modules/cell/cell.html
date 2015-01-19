@@ -1,0 +1,312 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>cell.cell &mdash; oppy 0.1 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <link rel="top" title="oppy 0.1 documentation" href="../../index.html" />
+    <link rel="up" title="Module code" href="../index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for cell.cell</h1><div class="highlight"><pre>
+<span class="c"># Copyright 2014, 2015, Nik Kinkel and David Johnston</span>
+<span class="c"># See LICENSE for licensing information</span>
+
+<span class="kn">import</span> <span class="nn">abc</span>
+<span class="kn">import</span> <span class="nn">struct</span>
+
+<span class="kn">import</span> <span class="nn">oppy.cell.definitions</span> <span class="kn">as</span> <span class="nn">DEF</span>
+
+<span class="kn">from</span> <span class="nn">oppy.cell.exceptions</span> <span class="kn">import</span> <span class="n">NotEnoughBytes</span><span class="p">,</span> <span class="n">UnknownCellCommand</span>
+
+
+<div class="viewcode-block" id="Cell"><a class="viewcode-back" href="../../docs/cell/cell.html#cell.cell.Cell">[docs]</a><span class="k">class</span> <span class="nc">Cell</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;An abstract base class for other kinds of cells.&#39;&#39;&#39;</span>
+
+    <span class="n">__metaclass__</span> <span class="o">=</span> <span class="n">abc</span><span class="o">.</span><span class="n">ABCMeta</span>
+    <span class="n">_subclass_map</span> <span class="o">=</span> <span class="bp">None</span>
+
+<div class="viewcode-block" id="Cell.getPayload"><a class="viewcode-back" href="../../docs/cell/cell.html#cell.cell.Cell.getPayload">[docs]</a>    <span class="k">def</span> <span class="nf">getPayload</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Return just the payload bytes of a cell.</span>
+
+<span class="sd">        For fixed-length cells, pad with null bytes to the appropriate length</span>
+<span class="sd">        according to Link Protocol version. Primarily useful for encrypting or</span>
+<span class="sd">        decrypting cells.</span>
+
+<span class="sd">        :returns: **str** cell payload bytes</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">start</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">payloadRange</span><span class="p">()</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">getBytes</span><span class="p">()[</span><span class="n">start</span><span class="p">:]</span>
+</div>
+    <span class="nd">@abc.abstractmethod</span>
+<div class="viewcode-block" id="Cell.payloadRange"><a class="viewcode-back" href="../../docs/cell/cell.html#cell.cell.Cell.payloadRange">[docs]</a>    <span class="k">def</span> <span class="nf">payloadRange</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Return the (start, end) indices of this cell&#39;s payload as a</span>
+<span class="sd">        2-tuple.</span>
+
+<span class="sd">        :returns: **tuple, int** (start, end) payload indices.&#39;&#39;&#39;</span>
+        <span class="k">pass</span>
+</div>
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="Cell.enoughDataForCell"><a class="viewcode-back" href="../../docs/cell/cell.html#cell.cell.Cell.enoughDataForCell">[docs]</a>    <span class="k">def</span> <span class="nf">enoughDataForCell</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">link_version</span><span class="o">=</span><span class="mi">3</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Return True iff the str **data** contains enough bytes to build a</span>
+<span class="sd">        cell.</span>
+
+<span class="sd">        The command byte is checked to determine the general type of</span>
+<span class="sd">        cell to look for. For fixed-length cells, this is enough to know</span>
+<span class="sd">        how much data is required. For variable-length cells, additionally</span>
+<span class="sd">        check the length bytes.</span>
+
+<span class="sd">        :param str data: The raw string to check.</span>
+<span class="sd">        :param int link_version: Link Protocol version in use. In version</span>
+<span class="sd">            3, 512 bytes are required for a fixed-length cell. In version</span>
+<span class="sd">            4, 514 bytes are required.</span>
+<span class="sd">        :returns: **bool** that&#39;s **True** iff data is long enough to</span>
+<span class="sd">            build the type of cell indicated by the command byte.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">if</span> <span class="n">link_version</span> <span class="o">&lt;</span> <span class="mi">4</span><span class="p">:</span>
+            <span class="n">fmt</span> <span class="o">=</span> <span class="s">&quot;!HB&quot;</span>
+            <span class="n">header_len</span> <span class="o">=</span> <span class="n">DEF</span><span class="o">.</span><span class="n">PAYLOAD_START_V3</span>
+            <span class="n">required_length</span> <span class="o">=</span> <span class="n">DEF</span><span class="o">.</span><span class="n">FIXED_LEN_V3_LEN</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">fmt</span> <span class="o">=</span> <span class="s">&quot;!IB&quot;</span>
+            <span class="n">header_len</span> <span class="o">=</span> <span class="n">DEF</span><span class="o">.</span><span class="n">PAYLOAD_START_V4</span>
+            <span class="n">required_length</span> <span class="o">=</span> <span class="n">DEF</span><span class="o">.</span><span class="n">FIXED_LEN_V4_LEN</span>
+
+        <span class="n">fmt</span> <span class="o">=</span> <span class="s">&quot;!HB&quot;</span> <span class="k">if</span> <span class="n">link_version</span> <span class="o">&lt;=</span> <span class="mi">3</span> <span class="k">else</span> <span class="s">&quot;!IB&quot;</span>
+        <span class="n">header_len</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">calcsize</span><span class="p">(</span><span class="n">fmt</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">header_len</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">False</span>
+        <span class="n">_</span><span class="p">,</span> <span class="n">cmd</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">unpack</span><span class="p">(</span><span class="n">fmt</span><span class="p">,</span> <span class="n">data</span><span class="p">[:</span><span class="n">header_len</span><span class="p">])</span>
+        <span class="k">if</span> <span class="n">cmd</span> <span class="ow">in</span> <span class="n">DEF</span><span class="o">.</span><span class="n">FIXED_LEN_CMD_IDS</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">required_length</span>
+        <span class="k">elif</span> <span class="n">cmd</span> <span class="ow">in</span> <span class="n">DEF</span><span class="o">.</span><span class="n">VAR_LEN_CMD_IDS</span><span class="p">:</span>
+            <span class="n">required_len</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">unpack</span><span class="p">(</span><span class="s">&#39;!H&#39;</span><span class="p">,</span>
+                                         <span class="n">data</span><span class="p">[</span><span class="n">header_len</span><span class="p">:</span><span class="n">header_len</span> <span class="o">+</span> <span class="mi">2</span><span class="p">])[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">required_len</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Unknown cell cmd: {}.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="n">UnknownCellCommand</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+</div>
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="Cell.parse"><a class="viewcode-back" href="../../docs/cell/cell.html#cell.cell.Cell.parse">[docs]</a>    <span class="k">def</span> <span class="nf">parse</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">link_version</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">encrypted</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Return an instance of a cell constructed from the str data.</span>
+
+<span class="sd">        If encrypted is True and the type if cell is RELAY or RELAY_EARLY,</span>
+<span class="sd">        don&#39;t try to parse the payload and just return a</span>
+<span class="sd">        :class:`~oppy.cell.fixedlen.EncryptedCell`.</span>
+<span class="sd">        Otherwise, instantiate and return the appropriate cell type.</span>
+
+<span class="sd">        .. note:: *data* str is not modified.</span>
+
+<span class="sd">        :param str data: raw bytes to parse and extract a cell from</span>
+<span class="sd">        :param int link_verison: Link Protocol version in use. For fixed-</span>
+<span class="sd">            length cells, this parameter dictates whether we expect 512</span>
+<span class="sd">            bytes (Link Protocol &lt;= 3) or 514 bytes.</span>
+<span class="sd">        :param bool encrypted: whether or not we think this cell is</span>
+<span class="sd">            encrypted. If True and we see a RELAY or RELAY_EARLY command</span>
+<span class="sd">            do not attempt to parse payload.</span>
+
+<span class="sd">        :returns: instantiated cell type as dictated by the command byte,</span>
+<span class="sd">            parsed and extracted from data.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="mi">1</span> <span class="o">&lt;=</span> <span class="n">link_version</span> <span class="o">&lt;=</span> <span class="mi">4</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;link_version must be leq 4, but found {} instead&quot;</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">link_version</span><span class="p">))</span>
+
+        <span class="c"># Handle the case where the circuit id represented as two octets and</span>
+        <span class="c"># the case where it is four octets:</span>
+        <span class="n">fmt</span> <span class="o">=</span> <span class="s">&quot;!HB&quot;</span> <span class="k">if</span> <span class="n">link_version</span> <span class="o">&lt;=</span> <span class="mi">3</span> <span class="k">else</span> <span class="s">&quot;!IB&quot;</span>
+        <span class="n">header_len</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">calcsize</span><span class="p">(</span><span class="n">fmt</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">header_len</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">NotEnoughBytes</span><span class="p">()</span>
+        <span class="n">circ_id</span><span class="p">,</span> <span class="n">cmd</span> <span class="o">=</span> <span class="n">struct</span><span class="o">.</span><span class="n">unpack</span><span class="p">(</span><span class="n">fmt</span><span class="p">,</span> <span class="n">data</span><span class="p">[:</span><span class="n">header_len</span><span class="p">])</span>
+
+        <span class="k">if</span> <span class="n">cmd</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">DEF</span><span class="o">.</span><span class="n">CELL_CMD_IDS</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;When parsing cell data, found an unknown cmd: {}.&quot;</span>
+            <span class="k">raise</span> <span class="n">UnknownCellCommand</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">cmd</span><span class="p">))</span>
+
+        <span class="n">cls</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="k">if</span> <span class="n">cmd</span> <span class="ow">in</span> <span class="n">DEF</span><span class="o">.</span><span class="n">VAR_LEN_CMD_IDS</span><span class="p">:</span>
+            <span class="kn">from</span> <span class="nn">oppy.cell.varlen</span> <span class="kn">import</span> <span class="n">VarLenCell</span>
+            <span class="n">cls</span> <span class="o">=</span> <span class="n">VarLenCell</span>
+        <span class="c"># only try to create a concrete relay cell subclass if payload</span>
+        <span class="c"># is not encrypted</span>
+        <span class="k">elif</span> <span class="n">encrypted</span> <span class="ow">is</span> <span class="bp">False</span> <span class="ow">and</span> <span class="p">(</span><span class="n">cmd</span> <span class="o">==</span> <span class="n">DEF</span><span class="o">.</span><span class="n">RELAY_CMD</span> <span class="ow">or</span> <span class="n">cmd</span> <span class="o">==</span> <span class="n">DEF</span><span class="o">.</span><span class="n">RELAY_EARLY_CMD</span><span class="p">):</span>
+            <span class="kn">from</span> <span class="nn">oppy.cell.relay</span> <span class="kn">import</span> <span class="n">RelayCell</span>
+            <span class="n">cls</span> <span class="o">=</span> <span class="n">RelayCell</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="kn">from</span> <span class="nn">oppy.cell.fixedlen</span> <span class="kn">import</span> <span class="n">FixedLenCell</span>
+            <span class="n">cls</span> <span class="o">=</span> <span class="n">FixedLenCell</span>
+
+        <span class="c"># Instantiate the appropriate kind of header, variable-length or fixed-</span>
+        <span class="c"># length.</span>
+        <span class="n">h</span> <span class="o">=</span> <span class="n">cls</span><span class="o">.</span><span class="n">Header</span><span class="p">(</span><span class="n">circ_id</span><span class="o">=</span><span class="n">circ_id</span><span class="p">,</span> <span class="n">cmd</span><span class="o">=</span><span class="n">cmd</span><span class="p">,</span> <span class="n">link_version</span><span class="o">=</span><span class="n">link_version</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">cls</span><span class="o">.</span><span class="n">_parse</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">h</span><span class="p">)</span>
+</div>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">_parse</span><span class="p">(</span><span class="n">cls</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">header</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Use the given cell data and (partial) cell header information to</span>
+<span class="sd">        instantiate a cell object of the appropriate type.</span>
+
+<span class="sd">        .. note:: *header.cmd* and *header.link_version* must be set by the</span>
+<span class="sd">            caller.</span>
+
+<span class="sd">        This is expected to be called only by *Cell.parse()*. *cls* is</span>
+<span class="sd">        expected to be one of the three abtract types of cells:</span>
+
+<span class="sd">            - :class:`~oppy.cell.fixedlen.FixedLenCell`</span>
+<span class="sd">            - :class:`~oppy.cell.varlen.VarLenCell`</span>
+<span class="sd">            - :class:`~oppy.cell.relay.RelayCell`</span>
+
+<span class="sd">        This function uses attributes of the *cls* object to parse</span>
+<span class="sd">        the given data.</span>
+
+<span class="sd">        :param str data: The data to be converted into a cell instance.</span>
+<span class="sd">        :param :class:`~oppy.cell.cell.Cell.Header` header: header</span>
+<span class="sd">            containing some previously parsed info (may be either a</span>
+<span class="sd">            :class:`~oppy.cell.fixedlen.FixedLenCell.Header` or</span>
+<span class="sd">            :class:`~oppy.cell.varlen.VarLenCell.Header`).</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">header</span><span class="p">,</span> <span class="n">cls</span><span class="o">.</span><span class="n">Header</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s">&quot;The given header object has the wrong type.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">header</span><span class="o">.</span><span class="n">cmd</span> <span class="ow">is</span> <span class="bp">None</span> <span class="ow">or</span> <span class="n">header</span><span class="o">.</span><span class="n">link_version</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s">&quot;Fields of the given header object are invalid.&quot;</span><span class="p">)</span>
+
+        <span class="c"># Construct a cell of the appropriate concrete type.</span>
+        <span class="n">subclass</span> <span class="o">=</span> <span class="n">cls</span><span class="o">.</span><span class="n">_getSubclass</span><span class="p">(</span><span class="n">header</span><span class="p">,</span> <span class="n">data</span><span class="p">)</span>
+        <span class="n">cell</span> <span class="o">=</span> <span class="n">subclass</span><span class="p">(</span><span class="n">header</span><span class="p">)</span>
+
+        <span class="c"># Parse additional information from data and add it to the new cell.</span>
+        <span class="n">cell</span><span class="o">.</span><span class="n">_parseHeader</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">cell</span><span class="p">):</span>
+            <span class="n">fmt</span> <span class="o">=</span> <span class="s">&quot;Needed {} bytes to finish parsing data; only found {}.&quot;</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="n">fmt</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">cell</span><span class="p">),</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">))</span>
+            <span class="k">raise</span> <span class="n">NotEnoughBytes</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+        <span class="n">cell</span><span class="o">.</span><span class="n">_parsePayload</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">cell</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">_getSubclass</span><span class="p">(</span><span class="n">cls</span><span class="p">,</span> <span class="n">header</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Use *header* to interpret the given cell data.</span>
+
+<span class="sd">        A cell type which will be appropriate for encapsulating/representing</span>
+<span class="sd">        this cell data is then selected and returned.</span>
+
+<span class="sd">        :param cls.Header header: the header in use for this cell</span>
+<span class="sd">        :param str data: raw str to parse</span>
+<span class="sd">        :returns: Concrete subclass of *cls*</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">if</span> <span class="n">cls</span><span class="o">.</span><span class="n">_subclass_map</span> <span class="ow">is</span> <span class="bp">None</span><span class="p">:</span>
+            <span class="n">cls</span><span class="o">.</span><span class="n">_initSubclassMap</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">cls</span><span class="o">.</span><span class="n">_subclass_map</span><span class="p">[</span><span class="n">header</span><span class="o">.</span><span class="n">cmd</span><span class="p">]</span>
+
+    <span class="nd">@abc.abstractmethod</span>
+    <span class="k">def</span> <span class="nf">_parseHeader</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Parse any remaining header information from *data*.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">pass</span>
+
+    <span class="nd">@abc.abstractmethod</span>
+    <span class="k">def</span> <span class="nf">_parsePayload</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Parse payload information from *data*.</span>
+
+<span class="sd">        This process depends upon the header-parsing process being complete.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">pass</span>
+
+    <span class="k">def</span> <span class="nf">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">fmt</span> <span class="o">=</span> <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__name__</span> <span class="o">+</span> <span class="s">&quot;(header={}, payload={})&quot;</span>
+        <span class="k">return</span> <span class="n">fmt</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">header</span><span class="p">,</span> <span class="nb">repr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">payload</span><span class="p">))</span>
+
+    <span class="k">def</span> <span class="nf">__len__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">_</span><span class="p">,</span> <span class="n">end</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">payloadRange</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">end</span>
+
+<div class="viewcode-block" id="Cell.Header"><a class="viewcode-back" href="../../docs/cell/cell.html#cell.cell.Cell.Header">[docs]</a>    <span class="k">class</span> <span class="nc">Header</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;A dummy header type that exists only to be overriden by classes</span>
+<span class="sd">        that inherit from :class:`~oppy.cell.cell.Cell`.&#39;&#39;&#39;</span>
+        <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s">&quot;This is an abstract class.&quot;</span><span class="p">)</span></div></div>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

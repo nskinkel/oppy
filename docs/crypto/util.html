@@ -1,0 +1,360 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>util &mdash; oppy 0.1 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <link rel="top" title="oppy 0.1 documentation" href="../../index.html" />
+    <link rel="up" title="crypto" href="../crypto.html" />
+    <link rel="next" title="exceptions" href="exceptions.html" />
+    <link rel="prev" title="relaycrypto" href="relaycrypto.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="exceptions.html" title="exceptions"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="relaycrypto.html" title="relaycrypto"
+             accesskey="P">previous</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../../docs.html" >Documentation</a> &raquo;</li>
+          <li><a href="../crypto.html" accesskey="U">crypto</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="module-crypto.util">
+<span id="util"></span><h1>util<a class="headerlink" href="#module-crypto.util" title="Permalink to this headline">¶</a></h1>
+<div class="topic">
+<p class="topic-title first">Details</p>
+<p>Crypto utility functions. Includes:</p>
+<blockquote>
+<div><ul class="simple">
+<li>Constant time string comparisons</li>
+<li>Wrappers around encryption/decryption operations</li>
+<li>The &#8220;recognized&#8221; check for incoming cells</li>
+<li>A couple methods for verifying TLS certificate properties (signatures
+and times)</li>
+</ul>
+</div></blockquote>
+</div>
+<dl class="function">
+<dt id="crypto.util.constantStrEqual">
+<tt class="descclassname">crypto.util.</tt><tt class="descname">constantStrEqual</tt><big>(</big><em>str1</em>, <em>str2</em><big>)</big><a class="reference internal" href="../../_modules/crypto/util.html#constantStrEqual"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#crypto.util.constantStrEqual" title="Permalink to this definition">¶</a></dt>
+<dd><p>Do a constant-time comparison of str1 and str2, returning <strong>True</strong>
+if they are equal, <strong>False</strong> otherwise.</p>
+<p>Use built-in hmac.compare_digest if it&#8217;s available, otherwise custom
+constant-time comparison.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>str1</strong> (<em>str</em>) &#8211; first string to compare</li>
+<li><strong>str2</strong> (<em>str</em>) &#8211; second string to compare</li>
+</ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first last"><strong>bool</strong> <strong>True</strong> if str1 == str2, <strong>False</strong> otherwise</p>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="function">
+<dt id="crypto.util.constantStrAllZero">
+<tt class="descclassname">crypto.util.</tt><tt class="descname">constantStrAllZero</tt><big>(</big><em>s</em><big>)</big><a class="reference internal" href="../../_modules/crypto/util.html#constantStrAllZero"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#crypto.util.constantStrAllZero" title="Permalink to this definition">¶</a></dt>
+<dd><p>Check if <em>s</em> consists of all zero bytes.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>s</strong> (<em>str</em>) &#8211; string to check</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><strong>bool</strong> <strong>True</strong> if <em>s</em> contains all zero bytes, <strong>False</strong>
+otherwise</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="function">
+<dt id="crypto.util.makeAES128CTRCipher">
+<tt class="descclassname">crypto.util.</tt><tt class="descname">makeAES128CTRCipher</tt><big>(</big><em>key</em>, <em>initial_value=0</em><big>)</big><a class="reference internal" href="../../_modules/crypto/util.html#makeAES128CTRCipher"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#crypto.util.makeAES128CTRCipher" title="Permalink to this definition">¶</a></dt>
+<dd><p>Create and return a new AES128-CTR cipher instance.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>key</strong> (<em>str</em>) &#8211; key to use for this cipher</li>
+<li><strong>initial_value</strong> &#8211; initial_value to use</li>
+</ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first last"><strong>Crypto.Cipher.AES.AES</strong></p>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="function">
+<dt id="crypto.util.makeHMACSHA256">
+<tt class="descclassname">crypto.util.</tt><tt class="descname">makeHMACSHA256</tt><big>(</big><em>msg</em>, <em>key</em><big>)</big><a class="reference internal" href="../../_modules/crypto/util.html#makeHMACSHA256"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#crypto.util.makeHMACSHA256" title="Permalink to this definition">¶</a></dt>
+<dd><p>Make a new HMAC-SHA256 with <em>msg</em> and <em>key</em> and return digest byte
+string.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>msg</strong> (<em>str</em>) &#8211; msg</li>
+<li><strong>key</strong> (<em>str</em>) &#8211; key to use</li>
+</ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first last"><strong>str</strong> HMAC digest</p>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="function">
+<dt id="crypto.util.makePayloadWithDigest">
+<tt class="descclassname">crypto.util.</tt><tt class="descname">makePayloadWithDigest</tt><big>(</big><em>payload</em>, <em>digest='\x00\x00\x00\x00'</em><big>)</big><a class="reference internal" href="../../_modules/crypto/util.html#makePayloadWithDigest"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#crypto.util.makePayloadWithDigest" title="Permalink to this definition">¶</a></dt>
+<dd><p>Make a new payload with <em>digest</em> inserted in the correct position.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>payload</strong> (<em>str</em>) &#8211; payload in which to insert digest</li>
+<li><strong>digest</strong> (<em>str</em>) &#8211; digest to insert</li>
+</ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first last"><strong>str</strong> payload with digest inserted into correct position</p>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="function">
+<dt id="crypto.util.encryptCellToTarget">
+<tt class="descclassname">crypto.util.</tt><tt class="descname">encryptCellToTarget</tt><big>(</big><em>cell</em>, <em>crypt_path</em>, <em>target=2</em>, <em>early=False</em><big>)</big><a class="reference internal" href="../../_modules/crypto/util.html#encryptCellToTarget"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#crypto.util.encryptCellToTarget" title="Permalink to this definition">¶</a></dt>
+<dd><p>Encrypt <em>cell</em> to the <em>target</em> relay in <em>crypt_path</em> and update
+the appropriate forward digest.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>cell</strong> (<em>cell</em>) &#8211; cell to encrypt</li>
+<li><strong>crypt_path</strong> (<em>list</em>) &#8211; list of RelayCrypto instances available for
+encryption</li>
+<li><strong>target</strong> (<em>int</em>) &#8211; target node to encrypt to</li>
+<li><strong>early</strong> (<em>bool</em>) &#8211; if <strong>True</strong>, use a RELAY_EARLY cmd instead of a
+RELAY cmd</li>
+</ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first last"><strong>oppy.cell.fixedlen.EncryptedCell</strong></p>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="function">
+<dt id="crypto.util.cellRecognized">
+<tt class="descclassname">crypto.util.</tt><tt class="descname">cellRecognized</tt><big>(</big><em>payload</em>, <em>relay_crypto</em><big>)</big><a class="reference internal" href="../../_modules/crypto/util.html#cellRecognized"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#crypto.util.cellRecognized" title="Permalink to this definition">¶</a></dt>
+<dd><p>Return <strong>True</strong> if this payload is <em>recognized</em>.</p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">See tor-spec Section 6.1 for details about what it means for a
+cell to be <em>recognized</em>.</p>
+</div>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>payload</strong> (<em>str</em>) &#8211; payload to check if recognized</li>
+<li><strong>relay_crypto</strong> (<em>oppy.crypto.relaycrypto.RelayCrypto</em>) &#8211; RelayCrypto
+instance to use for checking if payload is recognized</li>
+</ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first last"><strong>bool</strong> <strong>True</strong> if this payload is recognized, <strong>False</strong>
+otherwise</p>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="function">
+<dt id="crypto.util.decryptCellUntilRecognized">
+<tt class="descclassname">crypto.util.</tt><tt class="descname">decryptCellUntilRecognized</tt><big>(</big><em>cell</em>, <em>crypt_path</em>, <em>origin=2</em><big>)</big><a class="reference internal" href="../../_modules/crypto/util.html#decryptCellUntilRecognized"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#crypto.util.decryptCellUntilRecognized" title="Permalink to this definition">¶</a></dt>
+<dd><p>Decrypt <em>cell</em> until it is recognized or we&#8217;ve tried all RelayCrypto&#8217;s
+in <em>crypt_path</em>.</p>
+<p>Attempt to decrypt the cell one hop at a time. Stop if the cell is
+recognized. Raise an exception if the cell is not recognized at all.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>cell</strong> (<em>cell</em>) &#8211; cell to decrypt</li>
+<li><strong>oppy.crypto.relaycrypto.RelayCrypto crypt_path</strong> (<em>list,</em>) &#8211; list of
+RelayCrypto instances to use for decryption</li>
+<li><strong>origin</strong> (<em>int</em>) &#8211; the originating hop we think this cell came from</li>
+</ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first last">the concrete RelayCell type of this decrypted cell</p>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="function">
+<dt id="crypto.util.verifyCertSig">
+<tt class="descclassname">crypto.util.</tt><tt class="descname">verifyCertSig</tt><big>(</big><em>id_cert</em>, <em>cert_to_verify</em>, <em>algo='sha1'</em><big>)</big><a class="reference internal" href="../../_modules/crypto/util.html#verifyCertSig"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#crypto.util.verifyCertSig" title="Permalink to this definition">¶</a></dt>
+<dd><p>Verify that the SSL certificate <em>id_cert</em> has signed the TLS cert
+<em>cert_to_verify</em>.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>id_cert</strong> (<em>OpenSSL.crypto.X509</em>) &#8211; Identification Certificate</li>
+<li><strong>cert_to_verify</strong> (<em>OpenSSL.crypto.X509</em>) &#8211; certificate to verify signature on</li>
+<li><strong>algo</strong> (<em>str</em>) &#8211; algorithm to use for certificate verification</li>
+</ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first last"><strong>bool</strong> <strong>True</strong> if the signature of <em>cert_to_verify</em> can be
+verified from <em>id_cert</em>, <strong>False</strong> otherwise</p>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="function">
+<dt id="crypto.util.validCertTime">
+<tt class="descclassname">crypto.util.</tt><tt class="descname">validCertTime</tt><big>(</big><em>cert</em><big>)</big><a class="reference internal" href="../../_modules/crypto/util.html#validCertTime"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#crypto.util.validCertTime" title="Permalink to this definition">¶</a></dt>
+<dd><p>Verify that TLS certificate <em>cert</em>&#8216;s time is not earlier than
+cert.notBefore and not later than cert.notAfter.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>cert</strong> (<em>OpenSSL.crypto.X509</em>) &#8211; TLS Certificate to verify times of</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><strong>bool</strong> <strong>True</strong> if cert.notBefore &lt; now &lt; cert.notAfter,
+<strong>False</strong> otherwise</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="relaycrypto.html"
+                        title="previous chapter">relaycrypto</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="exceptions.html"
+                        title="next chapter">exceptions</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="../../_sources/docs/crypto/util.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="exceptions.html" title="exceptions"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="relaycrypto.html" title="relaycrypto"
+             >previous</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../../docs.html" >Documentation</a> &raquo;</li>
+          <li><a href="../crypto.html" >crypto</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

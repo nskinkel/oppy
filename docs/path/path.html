@@ -1,0 +1,259 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>path &mdash; oppy 0.1 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <link rel="top" title="oppy 0.1 documentation" href="../../index.html" />
+    <link rel="up" title="path" href="../path.html" />
+    <link rel="next" title="exceptions" href="exceptions.html" />
+    <link rel="prev" title="path" href="../path.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="exceptions.html" title="exceptions"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="../path.html" title="path"
+             accesskey="P">previous</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../../docs.html" >Documentation</a> &raquo;</li>
+          <li><a href="../path.html" accesskey="U">path</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="module-path.path">
+<span id="path"></span><h1>path<a class="headerlink" href="#module-path.path" title="Permalink to this headline">¶</a></h1>
+<div class="topic">
+<p class="topic-title first">PathConstraints</p>
+<p>PathConstraints represent constraints on a path through the Tor network.
+They are constructed by passing a dict of {&#8216;keyword&#8217;: &#8216;value&#8217;} as an
+argument for each node. A list of filters is built for each node. Then,
+using the satisfy() method, a PathConstraints object can select only
+the RelayDescriptors that satisfy the proper constraints.</p>
+<p>Path constraint objects can be used as follows (suppose <em>relays</em> is a
+list of RelayDescriptors):</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="gp">&gt;&gt;&gt; </span><span class="n">p</span> <span class="o">=</span> <span class="n">PathConstraints</span><span class="p">(</span><span class="n">entry</span><span class="o">=</span><span class="p">{</span><span class="s">&#39;ntor&#39;</span><span class="p">:</span> <span class="bp">True</span><span class="p">,</span> <span class="s">&#39;flags&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s">&#39;Fast&#39;</span><span class="p">,</span> <span class="s">&#39;Guard&#39;</span><span class="p">]},</span>
+<span class="gp">&gt;&gt;&gt; </span>                    <span class="n">middle</span><span class="o">=</span><span class="p">{</span><span class="s">&#39;ntor&#39;</span><span class="p">:</span> <span class="bp">True</span><span class="p">,</span> <span class="s">&#39;flags&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s">&#39;Stable&#39;</span><span class="p">],</span>
+<span class="gp">&gt;&gt;&gt; </span>                    <span class="nb">exit</span><span class="o">=</span><span class="p">{</span><span class="s">&#39;ntor&#39;</span><span class="p">:</span> <span class="bp">True</span><span class="p">,</span> <span class="s">&#39;flags&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s">&#39;Exit&#39;</span><span class="p">],</span>
+<span class="gp">&gt;&gt;&gt; </span>                          <span class="s">&#39;exit_to_port&#39;</span><span class="p">:</span> <span class="mi">443</span><span class="p">})</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">entry_candidates</span> <span class="o">=</span> <span class="n">p</span><span class="o">.</span><span class="n">satisfy</span><span class="p">(</span><span class="n">node</span><span class="o">=</span><span class="s">&#39;entry&#39;</span><span class="p">,</span> <span class="n">relays</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><em>entry_candidates</em> would now be a list of all relays that satisfy the
+entry node constraints.</p>
+</div>
+<div class="topic">
+<p class="topic-title first">PathSelector</p>
+<p>PathSelector objects simplify choosing a full path. PathSelectors take
+a PathConstraints object as an argument to the constructor. When
+getPath() is called, PathSelectors use these PathConstraints to build
+a path through the Tor network, taking care of some additional
+concerns including:</p>
+<blockquote>
+<div><ul class="simple">
+<li>not selecting two relays in the same family</li>
+<li>not selecting two relays in the same /16</li>
+<li>not selecting the same relay in a path twice</li>
+</ul>
+</div></blockquote>
+<p>getPath() returns a deferred that will fire with the chosen Path object.</p>
+</div>
+<dl class="class">
+<dt id="path.path.Path">
+<em class="property">class </em><tt class="descclassname">path.path.</tt><tt class="descname">Path</tt><a class="headerlink" href="#path.path.Path" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <tt class="xref py py-class docutils literal"><span class="pre">tuple</span></tt></p>
+<p>Path(entry, middle, exit)</p>
+<dl class="attribute">
+<dt id="path.path.Path.entry">
+<tt class="descname">entry</tt><a class="headerlink" href="#path.path.Path.entry" title="Permalink to this definition">¶</a></dt>
+<dd><p>Alias for field number 0</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="path.path.Path.exit">
+<tt class="descname">exit</tt><a class="headerlink" href="#path.path.Path.exit" title="Permalink to this definition">¶</a></dt>
+<dd><p>Alias for field number 2</p>
+</dd></dl>
+
+<dl class="attribute">
+<dt id="path.path.Path.middle">
+<tt class="descname">middle</tt><a class="headerlink" href="#path.path.Path.middle" title="Permalink to this definition">¶</a></dt>
+<dd><p>Alias for field number 1</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="path.path.PathConstraints">
+<em class="property">class </em><tt class="descclassname">path.path.</tt><tt class="descname">PathConstraints</tt><big>(</big><em>entry</em>, <em>middle</em>, <em>exit</em><big>)</big><a class="reference internal" href="../../_modules/path/path.html#PathConstraints"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#path.path.PathConstraints" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <tt class="xref py py-class docutils literal"><span class="pre">object</span></tt></p>
+<p>Represent a set of path constraints.</p>
+<dl class="attribute">
+<dt id="path.path.PathConstraints.keywords">
+<tt class="descname">keywords</tt><em class="property"> = set(['ntor', 'exit_to_IP', 'fingerprint', 'exit_to_port', 'flags', 'exit_to_IP_and_port', 'exit_IPv6'])</em><a class="headerlink" href="#path.path.PathConstraints.keywords" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="method">
+<dt id="path.path.PathConstraints.satisfy">
+<tt class="descname">satisfy</tt><big>(</big><em>relays</em>, <em>node</em>, <em>family_fprints=None</em>, <em>subnets=None</em><big>)</big><a class="reference internal" href="../../_modules/path/path.html#PathConstraints.satisfy"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#path.path.PathConstraints.satisfy" title="Permalink to this definition">¶</a></dt>
+<dd><p>Return the subset of <em>relays</em> that satisfies the path constraints
+for chosen <em>node</em>.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>relays</strong> (<em>list</em>) &#8211; a list (of stem.descriptor.server_descriptor.RelayDescriptor) of
+relays to filter</li>
+<li><strong>node</strong> (<em>str</em>) &#8211; the node for which we&#8217;re filtering (&#8216;entry&#8217;, &#8216;middle&#8217;,
+or &#8216;exit&#8217;). determines which filters to use</li>
+<li><strong>family_fprints</strong> (<em>set</em>) &#8211; a set (of str) of fingerprints in use
+by &#8220;family members&#8221; of relays on the current path. do not
+choose any relays with a fingerprint in family_fprints</li>
+<li><strong>subnets</strong> (<em>set</em>) &#8211; set (of ipaddress.ip_network) of the current
+/16&#8217;s in use for the path in question. do not choose any relays
+that share the same /16 as a relay that&#8217;s already been chosen.</li>
+</ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first last"><strong>list, stem.descriptor.server_descriptor.RelayDescriptor</strong>
+all RelayDescriptors from <em>relays</em> that satisfy the path
+constraints for the chosen node position</p>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="path.path.PathSelector">
+<em class="property">class </em><tt class="descclassname">path.path.</tt><tt class="descname">PathSelector</tt><a class="reference internal" href="../../_modules/path/path.html#PathSelector"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#path.path.PathSelector" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <tt class="xref py py-class docutils literal"><span class="pre">object</span></tt></p>
+<p>Select a path based on some path constraints.</p>
+<dl class="method">
+<dt id="path.path.PathSelector.getPath">
+<tt class="descname">getPath</tt><big>(</big><em>*args</em>, <em>**kwargs</em><big>)</big><a class="reference internal" href="../../_modules/path/path.html#PathSelector.getPath"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#path.path.PathSelector.getPath" title="Permalink to this definition">¶</a></dt>
+<dd><p>Filter the current set of RelayDescriptors and randomly choose an
+entry, middle, and exit node that satisfy the desired path constraints.</p>
+<p>We currently just use the absolutely bare minimum path constraints,
+namely:</p>
+<blockquote>
+<div><ul class="simple">
+<li>no two relays in the same family</li>
+<li>no two relays in the same /16</li>
+<li>each relay has the required default flags</li>
+</ul>
+</div></blockquote>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><strong>constraints</strong> (<em>oppy.path.path.PathConstraints</em>) &#8211; path constraints
+to satisfy</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><strong>twisted.internet.defer.Deferred</strong> that fires with an
+oppy.path.Path</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="../path.html"
+                        title="previous chapter">path</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="exceptions.html"
+                        title="next chapter">exceptions</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="../../_sources/docs/path/path.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="exceptions.html" title="exceptions"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="../path.html" title="path"
+             >previous</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../../docs.html" >Documentation</a> &raquo;</li>
+          <li><a href="../path.html" >path</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

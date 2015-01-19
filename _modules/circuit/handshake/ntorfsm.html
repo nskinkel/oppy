@@ -1,0 +1,342 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>circuit.handshake.ntorfsm &mdash; oppy 0.1 documentation</title>
+    
+    <link rel="stylesheet" href="../../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../../',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../../_static/doctools.js"></script>
+    <link rel="top" title="oppy 0.1 documentation" href="../../../index.html" />
+    <link rel="up" title="Module code" href="../../index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for circuit.handshake.ntorfsm</h1><div class="highlight"><pre>
+<span class="c"># Copyright 2014, 2015, Nik Kinkel</span>
+<span class="c"># See LICENSE for licensing information</span>
+
+<span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">.. topic:: Details</span>
+
+<span class="sd">    An NTorFSM steps through each state of a circuit handshake. At each step</span>
+<span class="sd">    an NTorFSM expects to receive a certain kind of cell. Either this cell is</span>
+<span class="sd">    received, processed, and a response cell is returned or an exception</span>
+<span class="sd">    is raised (and the circuit is destroyed).</span>
+
+<span class="sd">    NTorFSM&#39;s also derive key material and add RelayCrypto objects to the</span>
+<span class="sd">    associated circuit&#39;s *crypt_path*.</span>
+
+<span class="sd">&#39;&#39;&#39;</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+
+<span class="kn">from</span> <span class="nn">oppy.cell.definitions</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">CREATED2_CMD</span><span class="p">,</span>
+    <span class="n">DESTROY_CMD</span><span class="p">,</span>
+    <span class="n">RELAY_CMD</span><span class="p">,</span>
+    <span class="n">RELAY_EXTENDED2_CMD</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span> <span class="nn">oppy.cell.fixedlen</span> <span class="kn">import</span> <span class="n">Create2Cell</span>
+<span class="kn">from</span> <span class="nn">oppy.cell.relay</span> <span class="kn">import</span> <span class="n">RelayExtend2Cell</span>
+<span class="kn">from</span> <span class="nn">oppy.cell.util</span> <span class="kn">import</span> <span class="n">LinkSpecifier</span>
+<span class="kn">from</span> <span class="nn">oppy.circuit.handshake.exceptions</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">BadHandshakeState</span><span class="p">,</span>
+    <span class="n">HandshakeFailed</span><span class="p">,</span>
+    <span class="n">ReceivedDestroyCell</span><span class="p">,</span>
+    <span class="n">UnexpectedCell</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span> <span class="nn">oppy.crypto.exceptions</span> <span class="kn">import</span> <span class="n">UnrecognizedCell</span>
+<span class="kn">from</span> <span class="nn">oppy.crypto.ntorhandshake</span> <span class="kn">import</span> <span class="n">NTorHandshake</span>
+<span class="kn">import</span> <span class="nn">oppy.crypto.util</span> <span class="kn">as</span> <span class="nn">crypto</span>
+<span class="kn">from</span> <span class="nn">oppy.util.tools</span> <span class="kn">import</span> <span class="n">dispatch</span><span class="p">,</span> <span class="n">enum</span>
+
+
+<span class="n">State</span> <span class="o">=</span> <span class="n">enum</span><span class="p">(</span>
+    <span class="n">INIT</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+    <span class="n">EXPECT_CREATED2</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+    <span class="n">EXPECT_FIRST_EXTENDED2</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+    <span class="n">EXPECT_SECOND_EXTENDED2</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
+    <span class="n">DONE</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span>
+<span class="p">)</span>
+
+
+<div class="viewcode-block" id="NTorFSM"><a class="viewcode-back" href="../../../docs/circuit/ntorfsm.html#circuit.handshake.ntorfsm.NTorFSM">[docs]</a><span class="k">class</span> <span class="nc">NTorFSM</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;Finite state machine to step through an ntor handshake with relays</span>
+<span class="sd">    on a circuit&#39;s path.</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+
+    <span class="n">_response_map</span> <span class="o">=</span> <span class="p">{}</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">circuit_id</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">crypt_path</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        :param int circuit_id: id of the circuit for this ntor fsm</span>
+<span class="sd">        :param oppy.path.path.Path path: path for this circuit</span>
+<span class="sd">        :param list, oppy.crypto.relaycrypto.RelayCrypto crypt_path: a list</span>
+<span class="sd">            (to be filled in by this ntor fsm) of RelayCrypto objects</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">crypt_path</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span>
+        <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Creating NTorFSM for circuit {}.&quot;</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">circuit_id</span><span class="p">))</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">circuit_id</span> <span class="o">=</span> <span class="n">circuit_id</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_path</span> <span class="o">=</span> <span class="n">path</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_crypt_path</span> <span class="o">=</span> <span class="n">crypt_path</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_ntor_handshakes</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="o">=</span> <span class="n">State</span><span class="o">.</span><span class="n">INIT</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_ntor_handshakes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">NTorHandshake</span><span class="p">(</span><span class="n">path</span><span class="o">.</span><span class="n">entry</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_ntor_handshakes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">NTorHandshake</span><span class="p">(</span><span class="n">path</span><span class="o">.</span><span class="n">middle</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_ntor_handshakes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">NTorHandshake</span><span class="p">(</span><span class="n">path</span><span class="o">.</span><span class="n">exit</span><span class="p">))</span>
+
+<div class="viewcode-block" id="NTorFSM.recvCell"><a class="viewcode-back" href="../../../docs/circuit/ntorfsm.html#circuit.handshake.ntorfsm.NTorFSM.recvCell">[docs]</a>    <span class="k">def</span> <span class="nf">recvCell</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cell</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Call a handler function to process *cell* based on this ntor fsm&#39;s</span>
+<span class="sd">        current state.</span>
+
+<span class="sd">        :param cell cell: cell received from this ntor fsm&#39;s circuit</span>
+
+<span class="sd">        :returns: **cell, None** may return either the next cell to send</span>
+<span class="sd">            to step through handshakes with relays on this path or None if</span>
+<span class="sd">            no response is required</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">fn</span> <span class="o">=</span> <span class="n">NTorFSM</span><span class="o">.</span><span class="n">_response_map</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="p">]</span><span class="o">.</span><span class="n">__get__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">))</span>
+        <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;NTorFSM in unknown state: {}.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_state</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="n">BadHandshakeState</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="n">fn</span><span class="p">(</span><span class="n">cell</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">response</span>
+</div>
+<div class="viewcode-block" id="NTorFSM.getInitiatingCell"><a class="viewcode-back" href="../../../docs/circuit/ntorfsm.html#circuit.handshake.ntorfsm.NTorFSM.getInitiatingCell">[docs]</a>    <span class="k">def</span> <span class="nf">getInitiatingCell</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Build and return the initiating cell for this ntor fsm - a</span>
+<span class="sd">        Create2Cell.</span>
+
+<span class="sd">        Advance this ntor fsm&#39;s state.</span>
+
+<span class="sd">        :returns: **oppy.cell.fixedlen.Create2Cell**</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">onion_skin</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ntor_handshakes</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">createOnionSkin</span><span class="p">()</span>
+        <span class="n">cell</span> <span class="o">=</span> <span class="n">Create2Cell</span><span class="o">.</span><span class="n">make</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">,</span> <span class="n">hdata</span><span class="o">=</span><span class="n">onion_skin</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="o">=</span> <span class="n">State</span><span class="o">.</span><span class="n">EXPECT_CREATED2</span>
+
+        <span class="k">return</span> <span class="n">cell</span>
+</div>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">_verifyCellCmd</span><span class="p">(</span><span class="n">test_cmd</span><span class="p">,</span> <span class="n">cmd</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Verify that *test_cmd* == *cmd*. If not, or if this cmd is a</span>
+<span class="sd">        DESTROY_CMD, raise an exception.</span>
+
+<span class="sd">        :param int test_cmd: command to check</span>
+<span class="sd">        :param int cmd: expected command value</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">if</span> <span class="n">test_cmd</span> <span class="o">==</span> <span class="n">DESTROY_CMD</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;NTorFSM got a DESTROY cell.&quot;</span>
+            <span class="k">raise</span> <span class="n">ReceivedDestroyCell</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">test_cmd</span> <span class="o">!=</span> <span class="n">cmd</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;NTorFSM unexpected cell {}, expected {}.&quot;</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">test_cmd</span><span class="p">,</span> <span class="n">cmd</span><span class="p">)</span>
+            <span class="k">raise</span> <span class="n">UnexpectedCell</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+    <span class="nd">@dispatch</span><span class="p">(</span><span class="n">_response_map</span><span class="p">,</span> <span class="n">State</span><span class="o">.</span><span class="n">EXPECT_CREATED2</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">_processCreated2</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cell</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Called when this ntor fsm is receives a cell and is expecting</span>
+<span class="sd">        an Created2Cell.</span>
+
+<span class="sd">            - verify we did in fact receive a valid Created2Cell</span>
+<span class="sd">            - derive crypto keys</span>
+<span class="sd">            - create a RelayCrypto object and add to crypt_path</span>
+<span class="sd">            - create an Extend2 cell and encrypt it</span>
+<span class="sd">            - advance this ntor fsm&#39;s state</span>
+<span class="sd">            - return the encrypted Extend2 cell</span>
+
+<span class="sd">        Fail if we received an invalid or unexpected cell.</span>
+
+<span class="sd">        :param cell cell: the received cell</span>
+<span class="sd">        :returns: **oppy.cell.relay.RelayExtend2Cell**</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">NTorFSM</span><span class="o">.</span><span class="n">_verifyCellCmd</span><span class="p">(</span><span class="n">cell</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">cmd</span><span class="p">,</span> <span class="n">CREATED2_CMD</span><span class="p">)</span>
+
+        <span class="n">entry_crypto</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ntor_handshakes</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">deriveRelayCrypto</span><span class="p">(</span><span class="n">cell</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_crypt_path</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">entry_crypto</span><span class="p">)</span>
+
+        <span class="n">relay</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_path</span><span class="o">.</span><span class="n">middle</span>
+        <span class="n">lspecs</span> <span class="o">=</span> <span class="p">[</span><span class="n">LinkSpecifier</span><span class="p">(</span><span class="n">relay</span><span class="p">),</span> <span class="n">LinkSpecifier</span><span class="p">(</span><span class="n">relay</span><span class="p">,</span> <span class="n">legacy</span><span class="o">=</span><span class="bp">True</span><span class="p">)]</span>
+        <span class="n">hdata</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ntor_handshakes</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">createOnionSkin</span><span class="p">()</span>
+
+        <span class="n">cell</span> <span class="o">=</span> <span class="n">RelayExtend2Cell</span><span class="o">.</span><span class="n">make</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">,</span>
+                                     <span class="n">nspec</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">lspecs</span><span class="p">),</span>
+                                     <span class="n">lspecs</span><span class="o">=</span><span class="n">lspecs</span><span class="p">,</span>
+                                     <span class="n">hdata</span><span class="o">=</span><span class="n">hdata</span><span class="p">)</span>
+
+        <span class="n">response</span> <span class="o">=</span> <span class="n">crypto</span><span class="o">.</span><span class="n">encryptCellToTarget</span><span class="p">(</span><span class="n">cell</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_crypt_path</span><span class="p">,</span>
+                                              <span class="n">target</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">early</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="o">=</span> <span class="n">State</span><span class="o">.</span><span class="n">EXPECT_FIRST_EXTENDED2</span>
+        <span class="k">return</span> <span class="n">response</span>
+
+    <span class="nd">@dispatch</span><span class="p">(</span><span class="n">_response_map</span><span class="p">,</span> <span class="n">State</span><span class="o">.</span><span class="n">EXPECT_FIRST_EXTENDED2</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">_processFstExtended2</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cell</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Called when this ntor fsm is receives a cell and is expecting</span>
+<span class="sd">        its first Extended2 cell.</span>
+
+<span class="sd">            - decrypt the incoming cell</span>
+<span class="sd">            - verify we did in fact receive a valid Extended2 cell</span>
+<span class="sd">            - derive crypto keys</span>
+<span class="sd">            - create a RelayCrypto object and add to crypt_path</span>
+<span class="sd">            - create an Extend2 cell and encrypt it</span>
+<span class="sd">            - advance this ntor fsm&#39;s state</span>
+<span class="sd">            - return the encrypted Extend2 cell</span>
+
+<span class="sd">        Fail if we received an invalid or unexpected cell.</span>
+
+<span class="sd">        :param cell cell: the received cell</span>
+<span class="sd">        :returns: **oppy.cell.relay.RelayExtend2Cell**</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">cell</span><span class="p">,</span> <span class="n">origin</span> <span class="o">=</span> <span class="n">crypto</span><span class="o">.</span><span class="n">decryptCellUntilRecognized</span><span class="p">(</span><span class="n">cell</span><span class="p">,</span>
+                                                             <span class="bp">self</span><span class="o">.</span><span class="n">_crypt_path</span><span class="p">,</span>
+                                                             <span class="n">origin</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">UnrecognizedCell</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">HandshakeFailed</span><span class="p">()</span>
+
+        <span class="n">cmd</span> <span class="o">=</span> <span class="n">cell</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">cmd</span>
+        <span class="n">NTorFSM</span><span class="o">.</span><span class="n">_verifyCellCmd</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="n">RELAY_CMD</span><span class="p">)</span>
+        <span class="n">rcmd</span> <span class="o">=</span> <span class="n">cell</span><span class="o">.</span><span class="n">rheader</span><span class="o">.</span><span class="n">cmd</span>
+        <span class="n">NTorFSM</span><span class="o">.</span><span class="n">_verifyCellCmd</span><span class="p">(</span><span class="n">rcmd</span><span class="p">,</span> <span class="n">RELAY_EXTENDED2_CMD</span><span class="p">)</span>
+
+        <span class="c"># Generate crypto material from the received cell.</span>
+        <span class="n">middle_crypto</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ntor_handshakes</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">deriveRelayCrypto</span><span class="p">(</span><span class="n">cell</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_crypt_path</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">middle_crypto</span><span class="p">)</span>
+
+        <span class="n">relay</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_path</span><span class="o">.</span><span class="n">exit</span>
+        <span class="n">lspecs</span> <span class="o">=</span> <span class="p">[</span><span class="n">LinkSpecifier</span><span class="p">(</span><span class="n">relay</span><span class="p">),</span> <span class="n">LinkSpecifier</span><span class="p">(</span><span class="n">relay</span><span class="p">,</span> <span class="n">legacy</span><span class="o">=</span><span class="bp">True</span><span class="p">)]</span>
+
+        <span class="n">hdata</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ntor_handshakes</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">createOnionSkin</span><span class="p">()</span>
+
+        <span class="n">cell</span> <span class="o">=</span> <span class="n">RelayExtend2Cell</span><span class="o">.</span><span class="n">make</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">,</span>
+                                     <span class="n">nspec</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="n">lspecs</span><span class="p">),</span>
+                                     <span class="n">lspecs</span><span class="o">=</span><span class="n">lspecs</span><span class="p">,</span>
+                                     <span class="n">hdata</span><span class="o">=</span><span class="n">hdata</span><span class="p">)</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="n">crypto</span><span class="o">.</span><span class="n">encryptCellToTarget</span><span class="p">(</span><span class="n">cell</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_crypt_path</span><span class="p">,</span>
+                                              <span class="n">target</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">early</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="o">=</span> <span class="n">State</span><span class="o">.</span><span class="n">EXPECT_SECOND_EXTENDED2</span>
+        <span class="k">return</span> <span class="n">response</span>
+
+    <span class="nd">@dispatch</span><span class="p">(</span><span class="n">_response_map</span><span class="p">,</span> <span class="n">State</span><span class="o">.</span><span class="n">EXPECT_SECOND_EXTENDED2</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">_processSndExtended2</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cell</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Called when this ntor fsm is receives a cell and is expecting</span>
+<span class="sd">        its second Extend2 cell.</span>
+
+<span class="sd">            - decrypt the incoming cell</span>
+<span class="sd">            - verify we did in fact receive a valid Extended2 cell</span>
+<span class="sd">            - derive crypto keys</span>
+<span class="sd">            - create a RelayCrypto object and add to crypt_path</span>
+<span class="sd">            - advance this ntor fsm&#39;s state to Done</span>
+
+<span class="sd">        Fail if we received an invalid or unexpected cell.</span>
+
+<span class="sd">        :param cell cell: the received cell</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="c"># Decrypt and validate received cell.</span>
+        <span class="c"># Decrypt and validate received cell.</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">cell</span><span class="p">,</span> <span class="n">origin</span> <span class="o">=</span> <span class="n">crypto</span><span class="o">.</span><span class="n">decryptCellUntilRecognized</span><span class="p">(</span><span class="n">cell</span><span class="p">,</span>
+                                                             <span class="bp">self</span><span class="o">.</span><span class="n">_crypt_path</span><span class="p">,</span>
+                                                             <span class="n">origin</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">UnrecognizedCell</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">HandshakeFailed</span><span class="p">()</span>
+
+        <span class="n">cmd</span> <span class="o">=</span> <span class="n">cell</span><span class="o">.</span><span class="n">header</span><span class="o">.</span><span class="n">cmd</span>
+        <span class="n">NTorFSM</span><span class="o">.</span><span class="n">_verifyCellCmd</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="n">RELAY_CMD</span><span class="p">)</span>
+        <span class="n">rcmd</span> <span class="o">=</span> <span class="n">cell</span><span class="o">.</span><span class="n">rheader</span><span class="o">.</span><span class="n">cmd</span>
+        <span class="n">NTorFSM</span><span class="o">.</span><span class="n">_verifyCellCmd</span><span class="p">(</span><span class="n">rcmd</span><span class="p">,</span> <span class="n">RELAY_EXTENDED2_CMD</span><span class="p">)</span>
+
+        <span class="c"># Generate crypto material from the received cell.</span>
+        <span class="n">exit_crypto</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ntor_handshakes</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="o">.</span><span class="n">deriveRelayCrypto</span><span class="p">(</span><span class="n">cell</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_crypt_path</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">exit_crypto</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="o">=</span> <span class="n">State</span><span class="o">.</span><span class="n">DONE</span>
+        <span class="k">return</span> <span class="bp">None</span>
+
+<div class="viewcode-block" id="NTorFSM.isDone"><a class="viewcode-back" href="../../../docs/circuit/ntorfsm.html#circuit.handshake.ntorfsm.NTorFSM.isDone">[docs]</a>    <span class="k">def</span> <span class="nf">isDone</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Return **True** iff this ntor fsm&#39;s state is State.DONE</span>
+
+<span class="sd">        :returns: **bool** **True** if state is State.DONE</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="o">==</span> <span class="n">State</span><span class="o">.</span><span class="n">DONE</span></div></div>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../../index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

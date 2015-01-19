@@ -1,0 +1,245 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Simplifications and Unimplemented Functionality &mdash; oppy 0.1 documentation</title>
+    
+    <link rel="stylesheet" href="_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    './',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="top" title="oppy 0.1 documentation" href="index.html" />
+    <link rel="next" title="Project Roadmap" href="roadmap.html" />
+    <link rel="prev" title="Usage" href="usage.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="roadmap.html" title="Project Roadmap"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="usage.html" title="Usage"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">oppy 0.1 documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="simplifications-and-unimplemented-functionality">
+<span id="simplifications-label"></span><h1>Simplifications and Unimplemented Functionality<a class="headerlink" href="#simplifications-and-unimplemented-functionality" title="Permalink to this headline">¶</a></h1>
+<p>Here we aim to document the major simplifications oppy makes and OP
+functionality that oppy does not yet implement. Some of the items listed here
+are <strong>required</strong> for Tor OPs, and some just reflect the behavior tor itself has
+when running as an OP.</p>
+<p>This is a living document, subject to (possibly frequent) change. It is not
+comprehensive; oppy still makes some simplifications that are not listed here.</p>
+<p><strong>Major user-facing simplifications</strong></p>
+<blockquote>
+<div><p>These are the major &#8220;noticeable&#8221; things that are simplified/not implented.
+These may also appear below in their appropriate section.</p>
+<ul class="simple">
+<li>circuits and streams don&#8217;t know how to recover from RelayEnd cells sent
+because of reasons other than CONNECTION_DONE. If we get a RelayEnd
+due to, say, reason EXIT_POLICY, oppy will just not be able to handle
+this request. oppy doesn&#8217;t know how to try this request on a different
+circuit yet.</li>
+<li>circuit build timeouts are not calculated. this means that sometimes
+circuits are slooooow to be built or may not be built at all. this also
+means that oppy sometimes gets slower circuits than it should.</li>
+<li>oppy doesn&#8217;t know how to tear-down a slow/broken circuit yet. If a
+circuit is just too slow to be usable or, at some point, just stops
+responding, oppy doesn&#8217;t yet know that it should tear it down and
+build a new one.</li>
+<li>oppy doesn&#8217;t set a timeout on network status downloads, so sometimes
+these will just hang if we choose a bad V2Dir cache.</li>
+</ul>
+</div></blockquote>
+<p><strong>Cells</strong></p>
+<blockquote>
+<div><ul class="simple">
+<li>oppy does not implement all types of cells - only (most of) the kinds
+that an OP needs.</li>
+<li>RELAY_RESOLVE(D) cells are not implemented</li>
+<li>oppy does not implement the &#8220;make()&#8221; helper method for all types of
+implemented cells - only those that we currently need to build (e.g.
+for backward only cells, oppy doesn&#8217;t implement the helper method)</li>
+</ul>
+</div></blockquote>
+<p><strong>Circuits</strong></p>
+<blockquote>
+<div><ul class="simple">
+<li>oppy does not rotate circuits</li>
+<li>oppy does not attempt to recover from RelayEnd cells received due to
+reasons other than CONNECTION_DONE. For instance, if oppy receives a
+RelayEnd cell with reason EXIT_POLICY, oppy doesn&#8217;t know how to try
+this connection on another circuit and just closes the stream.</li>
+<li>oppy does not calculate circuit build timeouts</li>
+<li>oppy does not tear-down slow circuits. sometimes circuits may be really
+slow or stop working properly. oppy doesn&#8217;t know how to recover from this
+yet.</li>
+<li>oppy does not support the TAP handshake.</li>
+<li>oppy doesn&#8217;t know how to build internal circuits and/or access hidden
+services.</li>
+<li>oppy doesn&#8217;t know how to rebuild circuits. If oppy receives a
+RelayTruncated cell, the circuit is just immediately destroyed.</li>
+<li>oppy does not cannabalize circuits.</li>
+<li>oppy does not take into account bandwidth usage/history when assigning
+new streams to open circuits.</li>
+<li>oppy doesn&#8217;t currently mark circuits as &#8220;clean&#8221; or &#8220;dirty&#8221;. circuits
+are either &#8220;PENDING&#8221; (i.e. being built and currently trying to extend),
+&#8220;OPEN&#8221; (i.e. accepting new streams and forwarding traffic), or
+&#8220;BUFFERING&#8221; (waiting for a RelaySendMeCell), and that&#8217;s the only real
+state information circuits have.</li>
+<li>oppy does not know how to use RELAY_RESOLVE cells and, consequently,
+does not make any <em>resolve</em> circuits</li>
+<li>oppy doesn&#8217;t know how to build directory circuits</li>
+</ul>
+</div></blockquote>
+<p><strong>Connections</strong></p>
+<blockquote>
+<div><ul class="simple">
+<li>oppy only knows how to talk Link Protocol Version 3 (although
+functionality for version 4 is mostly there, at least in cells, just not
+tested yet)</li>
+<li>oppy does not use the &#8220;this_or_addresses&#8221; field in a received NetInfoCell
+to verify we&#8217;ve connected to the correct OR address</li>
+</ul>
+</div></blockquote>
+<p><strong>Crypto</strong></p>
+<blockquote>
+<div><ul class="simple">
+<li>oppy doesn&#8217;t handle clearing/wiping private keys properly (really, crypto
+should be handled in C modules)</li>
+</ul>
+</div></blockquote>
+<p><strong>Path Selection</strong></p>
+<blockquote>
+<div><ul class="simple">
+<li>oppy does not take bandwidth into account when choosing paths</li>
+<li>oppy always uses a default set of required flags for each node position
+in a path. these flags are probably not the correct flags to be using.</li>
+<li>oppy only chooses relays that support the ntor handshake.</li>
+<li>oppy does not use entry guards.</li>
+<li>oppy does not mark relays as <em>down</em> if they are unreachable.</li>
+</ul>
+</div></blockquote>
+<p><strong>Network Status Documents</strong></p>
+<blockquote>
+<div><ul class="simple">
+<li>oppy doesn&#8217;t know how to build or use directory circuits, so all
+network status document requests are just HTTP requests to V2Dir caches
+or directory authorities</li>
+<li>oppy just downloads all server descriptors at once instead of splitting
+up the downloads between multiple V2Dir caches</li>
+<li>oppy does not check whether or not we have the &#8220;best&#8221; server descriptor
+before downloading new descriptors. Currently, oppy just downloads all
+server descriptors everytime it grabs a fresh consensus.</li>
+<li>oppy does not schedule new consensus downloads at the correct time
+interval. currently oppy just downloads new network status documents
+every hour.</li>
+</ul>
+</div></blockquote>
+<p><strong>SOCKS</strong></p>
+<blockquote>
+<div><ul class="simple">
+<li>oppy only supports the NO_AUTH method</li>
+<li>oppy does not yet implement the tor socks extensions (e.g. for the
+RESOLVE command)</li>
+<li>oppy does not implement the &#8220;HTTP-Resistance&#8221; that tor does</li>
+<li>oppy does not support optimistic data</li>
+</ul>
+</div></blockquote>
+<p><strong>Streams</strong></p>
+<blockquote>
+<div><ul class="simple">
+<li>streams do not check how many cells still need to be flushed before
+sending a RelaySendMeCell. streams just send a SendMe cell as soon as
+their window reaches the SendMe threshold.</li>
+</ul>
+</div></blockquote>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="usage.html"
+                        title="previous chapter">Usage</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="roadmap.html"
+                        title="next chapter">Project Roadmap</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="_sources/simplifications.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="roadmap.html" title="Project Roadmap"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="usage.html" title="Usage"
+             >previous</a> |</li>
+        <li><a href="index.html">oppy 0.1 documentation</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

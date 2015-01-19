@@ -1,0 +1,192 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>util &mdash; oppy 0.1 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <link rel="top" title="oppy 0.1 documentation" href="../../index.html" />
+    <link rel="up" title="cell" href="../cell.html" />
+    <link rel="next" title="circuit" href="../circuit.html" />
+    <link rel="prev" title="exceptions" href="exceptions.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="../circuit.html" title="circuit"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="exceptions.html" title="exceptions"
+             accesskey="P">previous</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../../docs.html" >Documentation</a> &raquo;</li>
+          <li><a href="../cell.html" accesskey="U">cell</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="module-cell.util">
+<span id="util"></span><h1>util<a class="headerlink" href="#module-cell.util" title="Permalink to this headline">¶</a></h1>
+<dl class="class">
+<dt id="cell.util.LinkSpecifier">
+<em class="property">class </em><tt class="descclassname">cell.util.</tt><tt class="descname">LinkSpecifier</tt><big>(</big><em>relay</em>, <em>legacy=False</em><big>)</big><a class="reference internal" href="../../_modules/cell/util.html#LinkSpecifier"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.util.LinkSpecifier" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <tt class="xref py py-class docutils literal"><span class="pre">object</span></tt></p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">tor-spec, Section 5.1.2</p>
+</div>
+<dl class="method">
+<dt id="cell.util.LinkSpecifier.getBytes">
+<tt class="descname">getBytes</tt><big>(</big><big>)</big><a class="reference internal" href="../../_modules/cell/util.html#LinkSpecifier.getBytes"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.util.LinkSpecifier.getBytes" title="Permalink to this definition">¶</a></dt>
+<dd><p>Build and construct the raw byte string represented by this
+link specifier.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Returns:</th><td class="field-body"><strong>str</strong> raw byte string this link specifier represents</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="cell.util.TLVTriple">
+<em class="property">class </em><tt class="descclassname">cell.util.</tt><tt class="descname">TLVTriple</tt><big>(</big><em>addr</em><big>)</big><a class="reference internal" href="../../_modules/cell/util.html#TLVTriple"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.util.TLVTriple" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <tt class="xref py py-class docutils literal"><span class="pre">object</span></tt></p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">tor-spec, Section 6.4</p>
+</div>
+<dl class="staticmethod">
+<dt id="cell.util.TLVTriple.parse">
+<em class="property">static </em><tt class="descname">parse</tt><big>(</big><em>data</em>, <em>offset</em><big>)</big><a class="reference internal" href="../../_modules/cell/util.html#TLVTriple.parse"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.util.TLVTriple.parse" title="Permalink to this definition">¶</a></dt>
+<dd><p>Parse and extract TLVTriple fields from a byte string.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Parameters:</th><td class="field-body"><ul class="first simple">
+<li><strong>data</strong> (<em>str</em>) &#8211; byte string to parse</li>
+<li><strong>offset</strong> (<em>int</em>) &#8211; offset in str data where we should start
+reading</li>
+</ul>
+</td>
+</tr>
+<tr class="field-even field"><th class="field-name">Returns:</th><td class="field-body"><p class="first last"><tt class="xref py py-class docutils literal"><span class="pre">TLVTriple</span></tt></p>
+</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+<dl class="method">
+<dt id="cell.util.TLVTriple.getBytes">
+<tt class="descname">getBytes</tt><big>(</big><big>)</big><a class="reference internal" href="../../_modules/cell/util.html#TLVTriple.getBytes"><span class="viewcode-link">[source]</span></a><a class="headerlink" href="#cell.util.TLVTriple.getBytes" title="Permalink to this definition">¶</a></dt>
+<dd><p>Construct and return the raw byte string this TLVTriple
+represents.</p>
+<table class="docutils field-list" frame="void" rules="none">
+<col class="field-name" />
+<col class="field-body" />
+<tbody valign="top">
+<tr class="field-odd field"><th class="field-name">Returns:</th><td class="field-body"><strong>str</strong> raw byte string this TLVTriple represents.</td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="exceptions.html"
+                        title="previous chapter">exceptions</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="../circuit.html"
+                        title="next chapter">circuit</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="../../_sources/docs/cell/util.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li class="right" >
+          <a href="../circuit.html" title="circuit"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="exceptions.html" title="exceptions"
+             >previous</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../../docs.html" >Documentation</a> &raquo;</li>
+          <li><a href="../cell.html" >cell</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

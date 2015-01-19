@@ -1,0 +1,314 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>stream.stream &mdash; oppy 0.1 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <link rel="top" title="oppy 0.1 documentation" href="../../index.html" />
+    <link rel="up" title="Module code" href="../index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for stream.stream</h1><div class="highlight"><pre>
+<span class="c"># Copyright 2014, 2015, Nik Kinkel</span>
+<span class="c"># See LICENSE for licensing information</span>
+
+<span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">.. topic:: Details</span>
+
+<span class="sd">    Streams are the interface between local requests coming from</span>
+<span class="sd">    OppySOCKSProtocol instances and circuits. Streams are responsible for:</span>
+
+<span class="sd">        - Initiating a connection request (i.e. a RelayBeginCell) on behalf</span>
+<span class="sd">          of a local application</span>
+<span class="sd">        - Passing data from circuits to local applications and vice versa</span>
+<span class="sd">        - Informing OppySOCKSProtocol instances (and thus, the client</span>
+<span class="sd">          application) when a remote resource closes the stream</span>
+<span class="sd">        - Informing the circuit when the local application closes the stream</span>
+<span class="sd">        - Splitting up data to be written to the network into chunks that</span>
+<span class="sd">          can fit into a RelayData cell</span>
+<span class="sd">        - Doing some rudimentary flow-control</span>
+
+<span class="sd">&#39;&#39;&#39;</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+
+<span class="kn">from</span> <span class="nn">twisted.internet</span> <span class="kn">import</span> <span class="n">defer</span>
+
+<span class="kn">from</span> <span class="nn">oppy.cell.definitions</span> <span class="kn">import</span> <span class="n">MAX_RPAYLOAD_LEN</span>
+<span class="kn">from</span> <span class="nn">oppy.shared</span> <span class="kn">import</span> <span class="n">circuit_manager</span>
+
+
+<span class="n">SENDME_THRESHOLD</span> <span class="o">=</span> <span class="mi">450</span>
+<span class="n">STREAM_WINDOW_INIT</span> <span class="o">=</span> <span class="mi">500</span>
+<span class="n">STREAM_WINDOW_SIZE</span> <span class="o">=</span> <span class="mi">50</span>
+
+
+<div class="viewcode-block" id="Stream"><a class="viewcode-back" href="../../docs/stream/stream.html#stream.stream.Stream">[docs]</a><span class="k">class</span> <span class="nc">Stream</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;Represent a Tor Stream.&#39;&#39;&#39;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">socks</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">        :param oppy.util.exitrequest.ExitRequest request: connection request</span>
+<span class="sd">            for this stream</span>
+<span class="sd">        :param oppy.socks.socks.OppySOCKSProtocol socks: socks protocol</span>
+<span class="sd">            instance this stream should relay data to and from</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stream_id</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_read_queue</span> <span class="o">=</span> <span class="n">defer</span><span class="o">.</span><span class="n">DeferredQueue</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_write_queue</span> <span class="o">=</span> <span class="n">defer</span><span class="o">.</span><span class="n">DeferredQueue</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_read_deferred</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_write_deferred</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">request</span> <span class="o">=</span> <span class="n">request</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">socks</span> <span class="o">=</span> <span class="n">socks</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_deliver_window</span> <span class="o">=</span> <span class="n">STREAM_WINDOW_INIT</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_package_window</span> <span class="o">=</span> <span class="n">STREAM_WINDOW_INIT</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">circuit</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_circuit_request</span> <span class="o">=</span> <span class="n">circuit_manager</span><span class="o">.</span><span class="n">requestOpenCircuit</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_circuit_request</span><span class="o">.</span><span class="n">addCallback</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_registerNewStream</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_registerNewStream</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">circuit</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Register this stream with it&#39;s circuit, initiate a conenction</span>
+<span class="sd">        request, and begin listening for data from the network.</span>
+
+<span class="sd">        Called when this stream receives a suitable open circuit.</span>
+
+<span class="sd">        :param oppy.circuit.circuit.Circuit circuit: open circuit suitable</span>
+<span class="sd">            for use on this stream</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">circuit</span> <span class="o">=</span> <span class="n">circuit</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_circuit_request</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="c"># notify circuit it has a new stream</span>
+        <span class="c"># NOTE: circuit sets this stream&#39;s stream_id</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">circuit</span><span class="o">.</span><span class="n">registerStream</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="c"># tell the circuit to setup this stream (i.e. send a RELAY_BEGIN cell)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">circuit</span><span class="o">.</span><span class="n">initiateStream</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+        <span class="c"># start listening for incoming cells from our circuit</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pollReadQueue</span><span class="p">()</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">_chunkRelayData</span><span class="p">(</span><span class="n">data</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Split *data* into chunks that can fit inside a RelayData cell.</span>
+
+<span class="sd">        :param str data: data to split</span>
+<span class="sd">        :returns **list, str** list of pieces of data split into sizes that</span>
+<span class="sd">            fit into a RelayData cell</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">LEN</span> <span class="o">=</span> <span class="n">MAX_RPAYLOAD_LEN</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">data</span><span class="p">[</span><span class="n">i</span><span class="p">:</span><span class="n">i</span> <span class="o">+</span> <span class="n">LEN</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">),</span> <span class="n">LEN</span><span class="p">)]</span>
+
+<div class="viewcode-block" id="Stream.recvData"><a class="viewcode-back" href="../../docs/stream/stream.html#stream.stream.Stream.recvData">[docs]</a>    <span class="k">def</span> <span class="nf">recvData</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Put data received from the network on this stream&#39;s read queue.</span>
+
+<span class="sd">        Called when the circuit attached to this stream passes data to this</span>
+<span class="sd">        stream.</span>
+
+<span class="sd">        :param str data: data passed in from circuit to write to this stream&#39;s</span>
+<span class="sd">            attached SOCKS protocol</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_read_queue</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Stream.writeData"><a class="viewcode-back" href="../../docs/stream/stream.html#stream.stream.Stream.writeData">[docs]</a>    <span class="k">def</span> <span class="nf">writeData</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Split *data* into chunks that can fit in a RelayData cell, and put</span>
+<span class="sd">        each chunk on this stream&#39;s write queue.</span>
+
+<span class="sd">        Called when the local application attached to this stream sends data</span>
+<span class="sd">        to the network.</span>
+
+<span class="sd">        :param str data: data passed in from this stream&#39;s attached SOCKS</span>
+<span class="sd">            protocol to write to this stream&#39;s circuit</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">chunks</span> <span class="o">=</span> <span class="n">Stream</span><span class="o">.</span><span class="n">_chunkRelayData</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">chunk</span> <span class="ow">in</span> <span class="n">chunks</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_write_queue</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">chunk</span><span class="p">)</span>
+</div>
+    <span class="k">def</span> <span class="nf">_pollWriteQueue</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Pull a chunk of data from this stream&#39;s write queue and, when the</span>
+<span class="sd">        data is ready, write it to the attached circuit.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_write_deferred</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_write_queue</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_write_deferred</span><span class="o">.</span><span class="n">addCallback</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_writeData</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_pollReadQueue</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Pull a chunk of data from this stream&#39;s read queue and, when the</span>
+<span class="sd">        data is ready, write it to the attached SOCKS protocol instance.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_read_deferred</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_queue</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_read_deferred</span><span class="o">.</span><span class="n">addCallback</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_recvData</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_writeData</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Write *data* to the circuit attached to this stream and decrement</span>
+<span class="sd">        the packaging window.</span>
+
+<span class="sd">        :param str data: data received from attached SOCKS protocol instance</span>
+<span class="sd">            to be written to the attached circuit</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">circuit</span><span class="o">.</span><span class="n">writeData</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">stream_id</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_decPackageWindow</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">_recvData</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Receive *data* from the attached circuit and hand off to the</span>
+<span class="sd">        attached SOCKS protocol instance. Decrement this stream&#39;s deliver</span>
+<span class="sd">        window.</span>
+
+<span class="sd">        :param str data: data received from attached circuit, to be written</span>
+<span class="sd">            to the attached SOCKS protocol instance</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">socks</span><span class="o">.</span><span class="n">writeData</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_decDeliverWindow</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">_decDeliverWindow</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Decrement this stream&#39;s deliver window and initiate sending a</span>
+<span class="sd">        sendme cell if the deliver window drops too low.</span>
+
+<span class="sd">        If the deliver window is &lt;= SENDME_THRESHOLD, tell the attached</span>
+<span class="sd">        circuit to send a sendme cell on behalf of this stream.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="c"># XXX we should be checking how many cells we have left to flush</span>
+        <span class="c">#     here before just blindly writing a RELAY_SENDME</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_deliver_window</span> <span class="o">-=</span> <span class="mi">1</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_deliver_window</span> <span class="o">&lt;=</span> <span class="n">SENDME_THRESHOLD</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">circuit</span><span class="o">.</span><span class="n">sendStreamSendMe</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stream_id</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_deliver_window</span> <span class="o">+=</span> <span class="n">STREAM_WINDOW_SIZE</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pollReadQueue</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">_decPackageWindow</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Decrement this stream&#39;s package window and, if we still can,</span>
+<span class="sd">        listen for more data from the attached SOCKS protocol instance.</span>
+
+<span class="sd">        If the package window &lt;= 0, we need to wait until we receive a</span>
+<span class="sd">        sendme cell before writing anymore local data from this stream to</span>
+<span class="sd">        the attached circuit.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_package_window</span> <span class="o">-=</span> <span class="mi">1</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_package_window</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_pollWriteQueue</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_write_deferred</span> <span class="o">=</span> <span class="bp">None</span>
+
+<div class="viewcode-block" id="Stream.incrementPackageWindow"><a class="viewcode-back" href="../../docs/stream/stream.html#stream.stream.Stream.incrementPackageWindow">[docs]</a>    <span class="k">def</span> <span class="nf">incrementPackageWindow</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Increment this stream&#39;s package window and, if the package window</span>
+<span class="sd">        is now above zero and this stream was in a buffering state, begin</span>
+<span class="sd">        listening for local data again.</span>
+
+<span class="sd">        Called by the attached circuit when it receives a sendme cell</span>
+<span class="sd">        for this stream.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_package_window</span> <span class="o">+=</span> <span class="n">STREAM_WINDOW_SIZE</span>
+        <span class="c"># if we were buffering, we&#39;re now free to send data again</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_write_deferred</span> <span class="ow">is</span> <span class="bp">None</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_package_window</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_pollWriteQueue</span><span class="p">()</span>
+</div>
+<div class="viewcode-block" id="Stream.streamConnected"><a class="viewcode-back" href="../../docs/stream/stream.html#stream.stream.Stream.streamConnected">[docs]</a>    <span class="k">def</span> <span class="nf">streamConnected</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Begin listening for local data from the attached SOCKS protocol</span>
+<span class="sd">        to write to this stream&#39;s circuit.</span>
+
+<span class="sd">        Called when the attached circuit receives a RelayConnected cell for</span>
+<span class="sd">        this stream&#39;s RelayBegin request.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pollWriteQueue</span><span class="p">()</span>
+</div>
+<div class="viewcode-block" id="Stream.closeFromCircuit"><a class="viewcode-back" href="../../docs/stream/stream.html#stream.stream.Stream.closeFromCircuit">[docs]</a>    <span class="k">def</span> <span class="nf">closeFromCircuit</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Called when this stream is closed by the circuit.</span>
+
+<span class="sd">        This can be caused by receiving a RelayEnd cell, the circuit being</span>
+<span class="sd">        torn down, or the connection going down. We do not need to send a</span>
+<span class="sd">        RelayEnd cell ourselves if the circuit closed this stream.</span>
+
+<span class="sd">        Notify any associated SOCKS protocols and let circuit know this stream</span>
+<span class="sd">        has closed.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Stream {} closing from circuit {}&quot;</span>
+        <span class="n">msg</span> <span class="o">=</span> <span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stream_id</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">circuit</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">)</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">socks</span><span class="o">.</span><span class="n">closeFromStream</span><span class="p">()</span>
+</div>
+<div class="viewcode-block" id="Stream.closeFromSOCKS"><a class="viewcode-back" href="../../docs/stream/stream.html#stream.stream.Stream.closeFromSOCKS">[docs]</a>    <span class="k">def</span> <span class="nf">closeFromSOCKS</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Called when the attached SOCKS protocol object is done with this</span>
+<span class="sd">        stream.</span>
+
+<span class="sd">        Request that circuit send a RelayEnd cell on our behalf and notify</span>
+<span class="sd">        circuit we&#39;re now closed.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Stream {} on circuit {} closing from SOCKS.&quot;</span>
+        <span class="n">msg</span> <span class="o">=</span> <span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">stream_id</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">circuit</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">)</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">circuit</span><span class="o">.</span><span class="n">unregisterStream</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span></div></div>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>

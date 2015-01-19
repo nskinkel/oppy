@@ -1,0 +1,536 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>circuit.circuitmanager &mdash; oppy 0.1 documentation</title>
+    
+    <link rel="stylesheet" href="../../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../../',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <link rel="top" title="oppy 0.1 documentation" href="../../index.html" />
+    <link rel="up" title="Module code" href="../index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for circuit.circuitmanager</h1><div class="highlight"><pre>
+<span class="c"># Copyright 2014, 2015, Nik Kinkel</span>
+<span class="c"># See LICENSE for licensing information</span>
+
+<span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">.. topic:: Details</span>
+
+<span class="sd">    CircuitManager manages a pool of circuits. CircuitManager knows about all</span>
+<span class="sd">    open and pending circuits and can make choices about how and when</span>
+<span class="sd">    circuits are built and destroyed.</span>
+
+<span class="sd">    Currently, it&#39;s up to CircuitManager to:</span>
+
+<span class="sd">        - Create an initial pool of circuits (currently 4 IPv4 and 1 IPv6</span>
+<span class="sd">          initial circuits by default)</span>
+<span class="sd">        - Handle incoming requests for open circuits (made by streams) and</span>
+<span class="sd">          assign suitable circuits to handle the requests</span>
+<span class="sd">        - Decide when and if a circuit should be destroyed when its stream</span>
+<span class="sd">          count drops to zero</span>
+<span class="sd">        - Replenish the circuit pool when a circuit is destroyed and, if</span>
+<span class="sd">          necessary, build new circuits to handle any (now orphaned) pending</span>
+<span class="sd">          streams</span>
+<span class="sd">        - Assign pending streams to newly opened circuits when the circuits</span>
+<span class="sd">          complete their extension process</span>
+<span class="sd">        - Destroy all open and pending circuits when oppy shuts down</span>
+
+<span class="sd">&#39;&#39;&#39;</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">random</span>
+
+<span class="kn">from</span> <span class="nn">collections</span> <span class="kn">import</span> <span class="n">namedtuple</span>
+
+<span class="kn">from</span> <span class="nn">twisted.internet</span> <span class="kn">import</span> <span class="n">defer</span>
+
+<span class="kn">from</span> <span class="nn">oppy.circuit.circuit</span> <span class="kn">import</span> <span class="n">Circuit</span><span class="p">,</span> <span class="n">CType</span>
+<span class="kn">from</span> <span class="nn">oppy.path.path</span> <span class="kn">import</span> <span class="n">PathConstraints</span>
+<span class="kn">from</span> <span class="nn">oppy.path.defaults</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">DEFAULT_ENTRY_FLAGS</span><span class="p">,</span>
+    <span class="n">DEFAULT_MIDDLE_FLAGS</span><span class="p">,</span>
+    <span class="n">DEFAULT_EXIT_FLAGS</span><span class="p">,</span>
+<span class="p">)</span>
+
+
+<span class="n">PendingStream</span> <span class="o">=</span> <span class="n">namedtuple</span><span class="p">(</span><span class="s">&quot;PendingStream&quot;</span><span class="p">,</span> <span class="p">(</span>
+    <span class="s">&quot;stream&quot;</span><span class="p">,</span>
+    <span class="s">&quot;deferred&quot;</span><span class="p">,</span>
+<span class="p">))</span>
+
+
+<span class="n">DEFAULT_OPEN_IPv4</span> <span class="o">=</span> <span class="mi">4</span>
+<span class="n">DEFAULT_OPEN_IPv6</span> <span class="o">=</span> <span class="mi">1</span>
+
+
+<span class="n">DEFAULT_IPv4_CONSTRAINTS</span> <span class="o">=</span> <span class="n">PathConstraints</span><span class="p">(</span>
+    <span class="c"># add guard here with &#39;fingerprint&#39;: &#39;value&#39; arg for exit</span>
+    <span class="n">entry</span><span class="o">=</span><span class="p">{</span><span class="s">&#39;flags&#39;</span><span class="p">:</span> <span class="n">DEFAULT_ENTRY_FLAGS</span><span class="p">,</span> <span class="s">&#39;ntor&#39;</span><span class="p">:</span> <span class="bp">True</span><span class="p">},</span>
+    <span class="n">middle</span><span class="o">=</span><span class="p">{</span><span class="s">&#39;flags&#39;</span><span class="p">:</span> <span class="n">DEFAULT_MIDDLE_FLAGS</span><span class="p">,</span> <span class="s">&#39;ntor&#39;</span><span class="p">:</span> <span class="bp">True</span><span class="p">},</span>
+    <span class="nb">exit</span><span class="o">=</span><span class="p">{</span><span class="s">&#39;flags&#39;</span><span class="p">:</span> <span class="n">DEFAULT_EXIT_FLAGS</span><span class="p">,</span> <span class="s">&#39;ntor&#39;</span><span class="p">:</span> <span class="bp">True</span><span class="p">},</span>
+<span class="p">)</span>
+<span class="n">DEFAULT_IPv6_CONSTRAINTS</span> <span class="o">=</span> <span class="n">PathConstraints</span><span class="p">(</span>
+    <span class="n">entry</span><span class="o">=</span><span class="p">{</span><span class="s">&#39;flags&#39;</span><span class="p">:</span> <span class="n">DEFAULT_ENTRY_FLAGS</span><span class="p">,</span> <span class="s">&#39;ntor&#39;</span><span class="p">:</span> <span class="bp">True</span><span class="p">},</span>
+    <span class="n">middle</span><span class="o">=</span><span class="p">{</span><span class="s">&#39;flags&#39;</span><span class="p">:</span> <span class="n">DEFAULT_MIDDLE_FLAGS</span><span class="p">,</span> <span class="s">&#39;ntor&#39;</span><span class="p">:</span> <span class="bp">True</span><span class="p">},</span>
+    <span class="nb">exit</span><span class="o">=</span><span class="p">{</span><span class="s">&#39;flags&#39;</span><span class="p">:</span> <span class="n">DEFAULT_EXIT_FLAGS</span><span class="p">,</span> <span class="s">&#39;ntor&#39;</span><span class="p">:</span> <span class="bp">True</span><span class="p">,</span>
+          <span class="s">&#39;exit_IPv6&#39;</span><span class="p">:</span> <span class="bp">True</span><span class="p">},</span>
+<span class="p">)</span>
+
+
+<div class="viewcode-block" id="CircuitManager"><a class="viewcode-back" href="../../docs/circuit/circuitmanager.html#circuit.circuitmanager.CircuitManager">[docs]</a><span class="k">class</span> <span class="nc">CircuitManager</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;Manage a pool of circuits.&#39;&#39;&#39;</span>
+
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&quot;Creating circuit manager.&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_open_circuit_map</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pending_circuit_map</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pending_stream_pool</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_id_counter</span> <span class="o">=</span> <span class="mi">1</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_min_IPv4_count</span> <span class="o">=</span> <span class="n">DEFAULT_OPEN_IPv4</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_min_IPv6_count</span> <span class="o">=</span> <span class="n">DEFAULT_OPEN_IPv6</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_sent_open_message</span> <span class="o">=</span> <span class="bp">False</span>
+        <span class="c"># create default circuit pool</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_min_IPv4_count</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_buildNewCircuit</span><span class="p">(</span><span class="n">DEFAULT_IPv4_CONSTRAINTS</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">xrange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_min_IPv6_count</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_buildNewCircuit</span><span class="p">(</span><span class="n">DEFAULT_IPv6_CONSTRAINTS</span><span class="p">)</span>
+
+<div class="viewcode-block" id="CircuitManager.requestOpenCircuit"><a class="viewcode-back" href="../../docs/circuit/circuitmanager.html#circuit.circuitmanager.CircuitManager.requestOpenCircuit">[docs]</a>    <span class="k">def</span> <span class="nf">requestOpenCircuit</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">stream</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Return a deferred that will fire with an open circuit that can</span>
+<span class="sd">        handle the stream&#39;s request.</span>
+
+
+<span class="sd">        There are three general cases to handle when a new open circuit</span>
+<span class="sd">        request comes in:</span>
+
+<span class="sd">            1. An open circuit exists that can handle this request. In this</span>
+<span class="sd">               case, choose a random circuit from the set of open circuits</span>
+<span class="sd">               that can handle this request and immediately callback the</span>
+<span class="sd">               deferred with the chosen open circuit.</span>
+
+<span class="sd">            2. A pending circuit exists that, when open, can handle this</span>
+<span class="sd">               request. In this case, add the request to a pool of pending</span>
+<span class="sd">               requests. Whenever a circuit opens, circuit manager checks all</span>
+<span class="sd">               pending requests and assigns any pending requests that the</span>
+<span class="sd">               newly opened circuit can handle to that circuit. So when a</span>
+<span class="sd">               pending circuit opens that can handle this stream, the</span>
+<span class="sd">               stream&#39;s deferred will be called back with the fresly opened</span>
+<span class="sd">               circuit.</span>
+
+<span class="sd">            3. No open or pending circuits exist that can handle the request.</span>
+<span class="sd">               In this case, begin building a new circuit that can. Add the</span>
+<span class="sd">               request to a pending request pool and, when a circuit opens</span>
+<span class="sd">               that can handle the request, callback this stream&#39;s deferred</span>
+<span class="sd">               with the newly opened circuit.</span>
+
+<span class="sd">        :param oppy.stream.stream.Stream stream: the stream that is</span>
+<span class="sd">            requesting an open circuit</span>
+<span class="sd">        :returns: **twisted.internet.defer.Deferred** which will fire when</span>
+<span class="sd">            a circuit has opened that can handle this stream&#39;s request.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&quot;Circuit manager got an open circuit request.&quot;</span><span class="p">)</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="n">stream</span><span class="o">.</span><span class="n">request</span>
+        <span class="n">d</span> <span class="o">=</span> <span class="n">defer</span><span class="o">.</span><span class="n">Deferred</span><span class="p">()</span>
+        <span class="c"># list of currently open circuits that can handle the given request</span>
+        <span class="n">open_candidates</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_getOpenCandidates</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+        <span class="c"># choose a random open circuit for this request if we can</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">open_candidates</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">circuit_choice</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="n">open_candidates</span><span class="p">)</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Assigning request to circuit {}.&quot;</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">circuit_choice</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">))</span>
+            <span class="n">d</span><span class="o">.</span><span class="n">callback</span><span class="p">(</span><span class="n">circuit_choice</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c"># list of circuits currently being built that can handle the</span>
+            <span class="c"># given request</span>
+            <span class="n">pending_candidates</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_getPendingCandidates</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+            <span class="c"># if we have no pending circuits that can handle this request,</span>
+            <span class="c"># start building a new one that can</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">pending_candidates</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Building a new circuit to handle the new request.&quot;</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_buildNewCircuitForRequest</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+
+            <span class="bp">self</span><span class="o">.</span><span class="n">_pending_stream_pool</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">PendingStream</span><span class="p">(</span><span class="n">stream</span><span class="p">,</span> <span class="n">d</span><span class="p">))</span>
+
+        <span class="k">return</span> <span class="n">d</span>
+</div>
+<div class="viewcode-block" id="CircuitManager.shouldDestroyCircuit"><a class="viewcode-back" href="../../docs/circuit/circuitmanager.html#circuit.circuitmanager.CircuitManager.shouldDestroyCircuit">[docs]</a>    <span class="k">def</span> <span class="nf">shouldDestroyCircuit</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">circuit</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Return **True** iff CircuitManager thinks the calling circuit</span>
+<span class="sd">        should be destroyed.</span>
+
+<span class="sd">        Circuits call shouldDestroyCircuit() when their number of open</span>
+<span class="sd">        streams drops to zero. Since CircuitManager knows about all open</span>
+<span class="sd">        and pending circuits, it can make an informed judgement about whether</span>
+<span class="sd">        the calling circuit should be destroyed or remain open.</span>
+
+<span class="sd">        Currently, CircuitManager maintains at least 4 open or pending IPv4</span>
+<span class="sd">        circuits and one open or pending IPv6 circuit. If the number of</span>
+<span class="sd">        streams on any circuit drops to zero and it can be closed while still</span>
+<span class="sd">        satisfying these basic constraints, then CircuitManager tells it</span>
+<span class="sd">        to begin destroying itself (returns True).</span>
+
+<span class="sd">        :param oppy.circuit.circuit.Circuit circuit: circuit to</span>
+<span class="sd">            consider destroying.</span>
+<span class="sd">        :returns: **bool** **True** if CircuitManager decides this circuit</span>
+<span class="sd">            should be destroyed, **False** otherwise.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">if</span> <span class="n">circuit</span><span class="o">.</span><span class="n">ctype</span> <span class="o">==</span> <span class="n">CType</span><span class="o">.</span><span class="n">IPv4</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_totalIPv4Count</span><span class="p">()</span> <span class="o">-</span> <span class="mi">1</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">_min_IPv4_count</span><span class="p">:</span>
+                <span class="k">return</span> <span class="bp">False</span>
+            <span class="k">return</span> <span class="bp">True</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_totalIPv6Count</span><span class="p">()</span> <span class="o">-</span> <span class="mi">1</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">_min_IPv6_count</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">False</span>
+        <span class="k">return</span> <span class="bp">True</span>
+</div>
+<div class="viewcode-block" id="CircuitManager.circuitDestroyed"><a class="viewcode-back" href="../../docs/circuit/circuitmanager.html#circuit.circuitmanager.CircuitManager.circuitDestroyed">[docs]</a>    <span class="k">def</span> <span class="nf">circuitDestroyed</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">circuit</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Circuits call circuitDestroyed() when they have cleaned up after</span>
+<span class="sd">        themselves and closed.</span>
+
+<span class="sd">        Circuits may need to do a number of things before references to</span>
+<span class="sd">        them are completely removed. Exactly what steps a circuit needs to</span>
+<span class="sd">        take before being fully destroyed depend on both the circuit&#39;s state</span>
+<span class="sd">        and the state of the whole program. After a circuit has fully cleaned</span>
+<span class="sd">        up after itself and taken all necessary closing actions, it calls</span>
+<span class="sd">        CircuitManager.circuitDestroyed().</span>
+
+<span class="sd">        circuitDestroyed() does three things:</span>
+
+<span class="sd">            1. Remove the closed circuit from any internal maps.</span>
+
+<span class="sd">            2. Check the pool of pending requests. If any pending requests</span>
+<span class="sd">               exist that cannot be handled by any open or pending circuits,</span>
+<span class="sd">               begin building a new circuit to handle these orphaned requests.</span>
+<span class="sd">               This can happen when a circuit is built to handle a particular</span>
+<span class="sd">               request but is then destroyed/an error occurs while it is being</span>
+<span class="sd">               built.</span>
+
+<span class="sd">            3. Check CircuitManager&#39;s basic open and pending circuit</span>
+<span class="sd">               requirements to see if a new circuit of a certain type should</span>
+<span class="sd">               be built. For instance, if an IPv4 circuit closes and the</span>
+<span class="sd">               number of open and pending IPv4 circuits is below</span>
+<span class="sd">               self._min_IPv4_count, a new IPv4 circuit will be built.</span>
+
+<span class="sd">        :param circuit_id: id of circuit to be destroyed</span>
+<span class="sd">        :type circuit_id: int</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">cid</span> <span class="o">=</span> <span class="n">circuit</span><span class="o">.</span><span class="n">circuit_id</span>
+        <span class="k">if</span> <span class="n">cid</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pending_circuit_map</span> <span class="ow">and</span> <span class="n">cid</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_open_circuit_map</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Circuit manager was notified that circuit {} was destroyed,&quot;</span>
+            <span class="n">msg</span> <span class="o">+=</span> <span class="s">&quot; but manager has no reference to this circuit.&quot;</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+            <span class="k">return</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pending_circuit_map</span><span class="p">[</span><span class="n">cid</span><span class="p">]</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Destroyed pending circuit {}.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">cid</span><span class="p">)</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+            <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">_open_circuit_map</span><span class="p">[</span><span class="n">cid</span><span class="p">]</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Destroyed open circuit {}.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">cid</span><span class="p">)</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+        <span class="c"># assign any pending stream requests we can to open circuits</span>
+        <span class="k">for</span> <span class="n">circ</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_open_circuit_map</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_assignPossiblePendingRequests</span><span class="p">(</span><span class="n">circ</span><span class="p">)</span>
+
+        <span class="c"># build new circuits to handle any pending requests that can&#39;t</span>
+        <span class="c"># currently be satisfied.</span>
+        <span class="k">for</span> <span class="n">pending_stream</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pending_stream_pool</span><span class="p">:</span>
+            <span class="n">request</span> <span class="o">=</span> <span class="n">pending_stream</span><span class="o">.</span><span class="n">stream</span><span class="o">.</span><span class="n">request</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_getPendingCandidates</span><span class="p">(</span><span class="n">request</span><span class="p">))</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;After destroying circuit {}, a pending request has no &quot;</span>
+                <span class="n">msg</span> <span class="o">+=</span> <span class="s">&quot;circuits that can handle it. Creating a new circuit.&quot;</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">cid</span><span class="p">))</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_buildNewCircuitForRequest</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+
+        <span class="c"># if we&#39;ve dropped below the default number of circuits that should</span>
+        <span class="c"># be open, start building a new circuit</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_considerReplenishingCircuitPool</span><span class="p">()</span>
+</div>
+<div class="viewcode-block" id="CircuitManager.circuitOpened"><a class="viewcode-back" href="../../docs/circuit/circuitmanager.html#circuit.circuitmanager.CircuitManager.circuitOpened">[docs]</a>    <span class="k">def</span> <span class="nf">circuitOpened</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">circuit</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Circuits call circuitOpened() when they have successfully</span>
+<span class="sd">        completed their build process and are ready to handle incoming</span>
+<span class="sd">        streams.</span>
+
+<span class="sd">        When a circuit opens, CircuitManager:</span>
+
+<span class="sd">            - removes it from the pending circuit map</span>
+<span class="sd">            - adds it to the open circuit map</span>
+<span class="sd">            - assigns any pending requests that this circuit can handle to</span>
+<span class="sd">              this freshly opened circuit</span>
+<span class="sd">            - if this is the first circuit successfully opened, send a nice</span>
+<span class="sd">              message to the user letting them know oppy is ready to forward</span>
+<span class="sd">              traffic</span>
+
+<span class="sd">        :param oppy.circuit.circuit.Circuit circuit: circuit that</span>
+<span class="sd">            has just opened.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Circuit manager notified that circuit {} opened.&quot;</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">circuit</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">))</span>
+        <span class="c"># remove circuit from pending map</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pending_circuit_map</span><span class="p">[</span><span class="n">circuit</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">]</span>
+        <span class="k">except</span> <span class="ne">KeyError</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Circuit manager was notified circuit {} opened, but &quot;</span>
+            <span class="n">msg</span> <span class="o">+=</span> <span class="s">&quot;manager has no reference to this circuit.&quot;</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">circuit</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">))</span>
+            <span class="k">return</span>
+
+        <span class="c"># add to open map</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_open_circuit_map</span><span class="p">[</span><span class="n">circuit</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">]</span> <span class="o">=</span> <span class="n">circuit</span>
+        <span class="c"># assign new circuit any pending streams it can handle</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_assignPossiblePendingRequests</span><span class="p">(</span><span class="n">circuit</span><span class="p">)</span>
+
+        <span class="c"># send a nice message letting the user know we opened a circuit if</span>
+        <span class="c"># we haven&#39;t done so yet</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sent_open_message</span> <span class="ow">is</span> <span class="bp">False</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Circuit built successfully! oppy is ready to forward &quot;</span>
+            <span class="n">msg</span> <span class="o">+=</span> <span class="s">&quot;traffic :)&quot;</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_sent_open_message</span> <span class="o">=</span> <span class="bp">True</span>
+</div>
+<div class="viewcode-block" id="CircuitManager.destroyAllCircuits"><a class="viewcode-back" href="../../docs/circuit/circuitmanager.html#circuit.circuitmanager.CircuitManager.destroyAllCircuits">[docs]</a>    <span class="k">def</span> <span class="nf">destroyAllCircuits</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Destroy all open and pending circuits **and** remove all pending</span>
+<span class="sd">        requests.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Destroying all open and pending connections, circuits, and &quot;</span>
+        <span class="n">msg</span> <span class="o">+=</span> <span class="s">&quot;streams.&quot;</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pending_stream_pool</span> <span class="o">=</span> <span class="p">[]</span>
+
+        <span class="k">for</span> <span class="n">circuit</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_open_circuit_map</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+            <span class="n">circuit</span><span class="o">.</span><span class="n">destroyCircuitFromManager</span><span class="p">()</span>
+
+        <span class="k">for</span> <span class="n">circuit</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pending_circuit_map</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+            <span class="n">circuit</span><span class="o">.</span><span class="n">destroyCircuitFromManager</span><span class="p">()</span>
+</div>
+    <span class="k">def</span> <span class="nf">_assignPossiblePendingRequests</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">circuit</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Check all pending requests and assign any requests to *circuit*</span>
+<span class="sd">        that it can handle.</span>
+
+<span class="sd">        If a pending request is assigned to *circuit*, remove that request</span>
+<span class="sd">        from the pending request pool.</span>
+
+<span class="sd">        :param oppy.circuit.circuit.Circuit circuit: circuit to try assigning</span>
+<span class="sd">            pending requests to</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="c"># register any pending streams that this circuit can handle</span>
+        <span class="k">for</span> <span class="n">pending_stream</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pending_stream_pool</span><span class="p">[:]:</span>
+            <span class="n">request</span> <span class="o">=</span> <span class="n">pending_stream</span><span class="o">.</span><span class="n">stream</span><span class="o">.</span><span class="n">request</span>
+            <span class="c"># if this circuit can handle a request, callback with this circuit</span>
+            <span class="k">if</span> <span class="n">circuit</span><span class="o">.</span><span class="n">canHandleRequest</span><span class="p">(</span><span class="n">request</span><span class="p">):</span>
+                <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Assigning pending request to opened circuit {}.&quot;</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">circuit</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">))</span>
+                <span class="n">pending_stream</span><span class="o">.</span><span class="n">deferred</span><span class="o">.</span><span class="n">callback</span><span class="p">(</span><span class="n">circuit</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_pending_stream_pool</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">pending_stream</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_buildNewCircuit</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path_constraints</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Build a new circuit, using a path that satisfies</span>
+<span class="sd">        *path_constraints*.</span>
+
+<span class="sd">        Assign an ID to the new circuit and add it to the pending circuit</span>
+<span class="sd">        map.</span>
+
+<span class="sd">        :param oppy.path.path.PathConstraints path_constraints: The path</span>
+<span class="sd">            constraints that the new circuit&#39;s path should satisfy.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Building a new circuit with id {}.&quot;</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_id_counter</span><span class="p">))</span>
+        <span class="n">new_circuit</span> <span class="o">=</span> <span class="n">Circuit</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_id_counter</span><span class="p">,</span> <span class="n">path_constraints</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pending_circuit_map</span><span class="p">[</span><span class="n">new_circuit</span><span class="o">.</span><span class="n">circuit_id</span><span class="p">]</span> <span class="o">=</span> <span class="n">new_circuit</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_id_counter</span> <span class="o">+=</span> <span class="mi">1</span>
+
+    <span class="k">def</span> <span class="nf">_buildNewCircuitForRequest</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Build a new circuit such that the circuit&#39;s exit relay claims to</span>
+<span class="sd">        allow the *request*.</span>
+
+<span class="sd">        :param oppy.util.exitrequest.ExitRequest request: The request that</span>
+<span class="sd">            the new circuit&#39;s exit relay should allow.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="c"># build a new circuit with default flags and ntor that has an exit</span>
+        <span class="c"># node that can handle request</span>
+        <span class="n">dest</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">addr</span> <span class="o">+</span> <span class="s">&#39;:&#39;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">port</span><span class="p">)</span>
+        <span class="n">entry</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;flags&#39;</span><span class="p">:</span> <span class="n">DEFAULT_ENTRY_FLAGS</span><span class="p">,</span> <span class="s">&#39;ntor&#39;</span><span class="p">:</span> <span class="bp">True</span><span class="p">}</span>
+        <span class="n">middle</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;flags&#39;</span><span class="p">:</span> <span class="n">DEFAULT_MIDDLE_FLAGS</span><span class="p">,</span> <span class="s">&#39;ntor&#39;</span><span class="p">:</span> <span class="bp">True</span><span class="p">}</span>
+
+        <span class="k">if</span> <span class="n">request</span><span class="o">.</span><span class="n">is_ipv4</span><span class="p">:</span>
+            <span class="nb">exit</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;flags&#39;</span><span class="p">:</span> <span class="n">DEFAULT_EXIT_FLAGS</span><span class="p">,</span> <span class="s">&#39;ntor&#39;</span><span class="p">:</span> <span class="bp">True</span><span class="p">,</span>
+                    <span class="s">&#39;exit_to_IP_and_port&#39;</span><span class="p">:</span> <span class="n">dest</span><span class="p">}</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="nb">exit</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;flags&#39;</span><span class="p">:</span> <span class="n">DEFAULT_EXIT_FLAGS</span><span class="p">,</span> <span class="s">&#39;ntor&#39;</span><span class="p">:</span> <span class="bp">True</span><span class="p">,</span>
+                    <span class="s">&#39;exit_IPv6&#39;</span><span class="p">:</span> <span class="bp">True</span><span class="p">,</span> <span class="s">&#39;exit_to_IP_and_port&#39;</span><span class="p">:</span> <span class="n">dest</span><span class="p">}</span>
+
+        <span class="n">constraints</span> <span class="o">=</span> <span class="n">PathConstraints</span><span class="p">(</span><span class="n">entry</span><span class="o">=</span><span class="n">entry</span><span class="p">,</span> <span class="n">middle</span><span class="o">=</span><span class="n">middle</span><span class="p">,</span> <span class="nb">exit</span><span class="o">=</span><span class="nb">exit</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_buildNewCircuit</span><span class="p">(</span><span class="n">constraints</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_considerReplenishingCircuitPool</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Decide whether or not to build a new circuit - called when a</span>
+<span class="sd">        circuit is destroyed.</span>
+
+<span class="sd">        Check CircuitManager&#39;s basic requirements for open/pending circuits.</span>
+<span class="sd">        If they are not satisfied, build a new circuit.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="c"># check if we&#39;re below the threshold of either IPv4 or IPv6 circuits</span>
+        <span class="c"># we should have open or pending. if so, build a new circuit of</span>
+        <span class="c"># the required type</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_totalIPv4Count</span><span class="p">()</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">_min_IPv4_count</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Replenishing circuit pool with a new IPv4 circuit.&quot;</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_buildNewCircuit</span><span class="p">(</span><span class="n">DEFAULT_IPv4_CONSTRAINTS</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_totalIPv6Count</span><span class="p">()</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">_min_IPv6_count</span><span class="p">:</span>
+            <span class="n">msg</span> <span class="o">=</span> <span class="s">&quot;Replenishing circuit pool with a new IPv6 circuit.&quot;</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_buildNewCircuit</span><span class="p">(</span><span class="n">DEFAULT_IPv6_CONSTRAINTS</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">_openIPv4Count</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Return the number of open IPv4 circuits.</span>
+
+<span class="sd">        :returns: **int** number of open IPv4 circuits</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">([</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_open_circuit_map</span><span class="o">.</span><span class="n">values</span><span class="p">()</span>
+                    <span class="k">if</span> <span class="n">i</span><span class="o">.</span><span class="n">ctype</span> <span class="o">==</span> <span class="n">CType</span><span class="o">.</span><span class="n">IPv4</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">_openIPv6Count</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Return the number of open IPv6 circuits.</span>
+
+<span class="sd">        :returns: **int** number of open IPv6 circuits.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">([</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_open_circuit_map</span><span class="o">.</span><span class="n">values</span><span class="p">()</span>
+                    <span class="k">if</span> <span class="n">i</span><span class="o">.</span><span class="n">ctype</span> <span class="o">==</span> <span class="n">CType</span><span class="o">.</span><span class="n">IPv6</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">_pendingIPv4Count</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Return the number of pending IPv4 circuits.</span>
+
+<span class="sd">        :returns: **int** number of pending IPv4 circuits.</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">([</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pending_circuit_map</span><span class="o">.</span><span class="n">values</span><span class="p">()</span>
+                   <span class="k">if</span> <span class="n">i</span><span class="o">.</span><span class="n">ctype</span> <span class="o">==</span> <span class="n">CType</span><span class="o">.</span><span class="n">IPv4</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">_pendingIPv6Count</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Return the number of pending IPv6 circuits.</span>
+
+<span class="sd">        :returns: **int** number of pending IPv6 circuits</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">([</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pending_circuit_map</span><span class="o">.</span><span class="n">values</span><span class="p">()</span>
+                    <span class="k">if</span> <span class="n">i</span><span class="o">.</span><span class="n">ctype</span> <span class="o">==</span> <span class="n">CType</span><span class="o">.</span><span class="n">IPv6</span><span class="p">])</span>
+
+    <span class="k">def</span> <span class="nf">_totalIPv4Count</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Return the total (open + pending) IPv4 circuits.</span>
+
+<span class="sd">        :returns: **int** total IPv4 circuits</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_openIPv4Count</span><span class="p">()</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pendingIPv4Count</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">_totalIPv6Count</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Return the total (open + pending) IPv6 circuits.</span>
+
+<span class="sd">        :returns: **int** total IPv6 circuits</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_openIPv6Count</span><span class="p">()</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pendingIPv6Count</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">_getOpenCandidates</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Return a list of circuits whose exit relay claims to allow the</span>
+<span class="sd">        *request*.</span>
+
+<span class="sd">        :returns: **list, oppy.circuit.circuit.Circuit** open circuits whose</span>
+<span class="sd">            exit relay can handle the request</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_open_circuit_map</span><span class="o">.</span><span class="n">values</span><span class="p">()</span>
+                <span class="k">if</span> <span class="n">i</span><span class="o">.</span><span class="n">canHandleRequest</span><span class="p">(</span><span class="n">request</span><span class="p">)]</span>
+
+    <span class="k">def</span> <span class="nf">_getPendingCandidates</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">):</span>
+        <span class="sd">&#39;&#39;&#39;Return a list of pending circuits that claim to handle the</span>
+<span class="sd">        request.</span>
+
+<span class="sd">        .. note:: Since a pending circuit may not yet have an exit relay,</span>
+<span class="sd">            whether or not this circuit can *actually* handle the request</span>
+<span class="sd">            is just an informed guess. It may turn out that it can&#39;t</span>
+<span class="sd">            **actually** handle the request once the circuit is open.</span>
+
+<span class="sd">        :returns: **list, oppy.circuit.circuit.Circuit** pending circuits</span>
+<span class="sd">            that can (probably) handle the request</span>
+<span class="sd">        &#39;&#39;&#39;</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pending_circuit_map</span><span class="o">.</span><span class="n">values</span><span class="p">()</span>
+                <span class="k">if</span> <span class="n">i</span><span class="o">.</span><span class="n">canHandleRequest</span><span class="p">(</span><span class="n">request</span><span class="p">)]</span></div>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../../index.html">oppy 0.1 documentation</a> &raquo;</li>
+          <li><a href="../index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 1.2.3.
+    </div>
+  </body>
+</html>
