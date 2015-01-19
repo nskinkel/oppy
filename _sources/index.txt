@@ -4,7 +4,9 @@ Welcome to oppy's documentation!
 oppy is an Onion Proxy (OP) written in Python, aiming to implement the OP
 functionality of the Tor protocol as outlined in tor-spec. oppy does not
 implement Onion Routing (OR) functionality. Any further references to "Tor" or "tor" refer to the protocol, unless otherwise noted, and do not imply
-endorsement from The Tor Project organization.
+endorsement from The Tor Project organization. oppy is produced independently 
+from the Tor® anonymity software and carries no guarantee from The Tor Project
+about quality, suitability or anything else.
 
 oppy is `free software <https://fsf.org>`_, licensed under the "modified"
 (or 3-clause) BSD license.
