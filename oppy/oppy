@@ -1,0 +1,78 @@
+#! /usr/bin/env python
+
+# Copyright 2014, 2015, Nik Kinkel
+# See LICENSE for licensing information
+
+import argparse
+import logging
+import sys
+
+from twisted.internet import reactor
+from twisted.internet.endpoints import TCP4ServerEndpoint
+
+
+# Note: we do *not* use Twisted's log module to avoid logging
+#       addresses connected to (e.g. when retrieving directory information)
+#       and start/end times of critical events (like circuit handshakes)
+#       unless we explicitly choose to
+
+DEFAULT_SOCKS_PORT = 10050
+MIN_PORT = 1
+MAX_PORT = 65535
+PRIVILEGED_PORTS_MAX = 1023
+
+parser = argparse.ArgumentParser()
+parser.add_argument('-l', '--log-level', action='store', default=logging.INFO)
+parser.add_argument('-f', '--log-file', action='store')
+parser.add_argument('-p', '--SOCKS-port', action='store',
+                    default=DEFAULT_SOCKS_PORT)
+
+args = parser.parse_args()
+
+try:
+    logLevel = getattr(logging, args.log_level.upper())
+except AttributeError:
+    logLevel = logging.INFO
+
+oppyLogger = logging.getLogger()
+oppyLogger.setLevel(logLevel)
+fmt = '%(asctime)s %(levelname)s %(message)s'
+datefmt = '%Y-%m-%d %H:%M:%S'
+formatter = logging.Formatter(fmt=fmt, datefmt=datefmt)
+
+# default logging to sys.stdout
+if args.log_file is not None:
+    logger = logging.FileHandler(args.log_file)
+else:
+    logger = logging.StreamHandler(sys.stdout)
+
+logger.setFormatter(formatter)
+oppyLogger.addHandler(logger)
+
+try:
+    socks_port = int(args.SOCKS_port)
+    if not (MIN_PORT <= socks_port <= MAX_PORT):
+        raise ValueError
+    if socks_port <= PRIVILEGED_PORTS_MAX:
+        msg = 'It is not recommended to run oppy as a privileged user or on a '
+        msg += 'privileged port.'
+        logging.warning(msg)
+except ValueError:
+    logging.error('Invalid SOCKS port {0}.'.format(args.SOCKS_port))
+    socks_port = DEFAULT_SOCKS_PORT
+
+logging.info('oppy will listen for connections on port {}.'.format(socks_port))
+logging.info('But we need to build some circuits first...')
+logging.info('Retrieving network status information.')
+
+# catch CTRL-C to shutdown properly
+from oppy.util.tools import shutdown
+reactor.addSystemEventTrigger('before', 'shutdown', shutdown)
+
+import oppy.shared
+from oppy.socks.socks import OppySOCKSProtocolFactory
+
+server_endpoint = TCP4ServerEndpoint(reactor, socks_port)
+server_endpoint.listen(OppySOCKSProtocolFactory())
+
+reactor.run()

@@ -1,0 +1,5 @@
+socks
+-----
+
+.. automodule:: socks.socks
+

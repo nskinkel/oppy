@@ -1,0 +1,5 @@
+stream
+------
+
+.. automodule:: stream.stream
+

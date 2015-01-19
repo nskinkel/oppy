@@ -1,0 +1,5 @@
+path
+----
+
+.. automodule:: path.path
+

@@ -1,0 +1,5 @@
+exceptions
+----------
+
+.. automodule:: path.exceptions
+

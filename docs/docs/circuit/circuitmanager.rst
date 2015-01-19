@@ -1,0 +1,5 @@
+circuitmanager
+--------------
+
+.. automodule:: circuit.circuitmanager
+

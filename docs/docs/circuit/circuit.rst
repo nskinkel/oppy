@@ -1,0 +1,5 @@
+circuit
+-------
+
+.. automodule:: circuit.circuit
+

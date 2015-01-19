@@ -1,0 +1,5 @@
+connection
+----------
+
+.. automodule:: connection.connection
+

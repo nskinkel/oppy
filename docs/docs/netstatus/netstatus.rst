@@ -1,0 +1,5 @@
+netstatus
+---------
+
+.. automodule:: netstatus.netstatus
+
