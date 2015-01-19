@@ -104,16 +104,16 @@ is not sufficient for strong anonymity.
 A few of the major "noticeable" simplifications that directly impact regular
 usage include:
 
-    - oppy doesn't know how to recover from RelayEnd cells sent because of
-      reasons like EXIT_POLICY. In these cases oppy just closes the stream, so
-      this can sometimes look, to the user, like oppy is just not working.
-    - oppy doesn't currently calculate circuit build timeouts or try to
-      rebuild slow circuits (or circuits which become unresponsive). Again,
-      this can look to the user like oppy has stopped working (e.g. web 
-      pages may stop loading if a stream gets assigned to a slow/unresponsive
-      circuit).
-    - oppy doesn't yet put a timeout on downloading server descriptors,
-      so sometimes this will hang if oppy chooses a bad V2Dir cache.
+- oppy doesn't know how to recover from RelayEnd cells sent because of
+  reasons like EXIT_POLICY. In these cases oppy just closes the stream, so
+  this can sometimes look, to the user, like oppy is just not working.
+- oppy doesn't currently calculate circuit build timeouts or try to
+  rebuild slow circuits (or circuits which become unresponsive). Again,
+  this can look to the user like oppy has stopped working (e.g. web 
+  pages may stop loading if a stream gets assigned to a slow/unresponsive
+  circuit).
+- oppy doesn't yet put a timeout on downloading server descriptors,
+  so sometimes this will hang if oppy chooses a bad V2Dir cache.
 
-For a more complete list of the simplifications oppy makes, see 
+For a more complete list of the simplifications oppy makes, see:
 simplifications.md.
