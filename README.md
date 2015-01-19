@@ -12,13 +12,13 @@ quality, suitability or anything else.
 To learn more about what Onion Proxies do, please see `tor-spec.txt`, the Tor
 protocol specification.
 
-For full documentation, see: XXX
+For full documentation, see: [oppy-docs](https://nskinkel.github.com/oppy)
 
 
 ###Warning
 `oppy` is provided in the hope it will be useful, however **oppy will NOT
 provide strong anonymity**. `oppy` is just a prototype: it's not very well
-tested yet, and it makes a number of simplifications (see: XXX).
+tested yet, and it makes a number of simplifications (see: simplifications.md).
 
 If you need strong anonymity, please use the
 [official Tor software](https://www.torproject.org/download/download-easy.html)
@@ -104,15 +104,16 @@ is not sufficient for strong anonymity.
 A few of the major "noticeable" simplifications that directly impact regular
 usage include:
 
-    - `oppy` doesn't know how to recover from RelayEnd cells sent because of
+    - oppy doesn't know how to recover from RelayEnd cells sent because of
       reasons like EXIT_POLICY. In these cases oppy just closes the stream, so
-      this can sometimes look, to the user, like `oppy` is just not working.
-    - `oppy` doesn't currently calculate circuit build timeouts or try to
+      this can sometimes look, to the user, like oppy is just not working.
+    - oppy doesn't currently calculate circuit build timeouts or try to
       rebuild slow circuits (or circuits which become unresponsive). Again,
-      this can look to the user like `oppy` has stopped working (e.g. web 
+      this can look to the user like oppy has stopped working (e.g. web 
       pages may stop loading if a stream gets assigned to a slow/unresponsive
       circuit).
-    - `oppy` doesn't yet put a timeout on downloading server descriptors,
-      so sometimes this will hang if `oppy` chooses a bad V2Dir cache.
+    - oppy doesn't yet put a timeout on downloading server descriptors,
+      so sometimes this will hang if oppy chooses a bad V2Dir cache.
 
-For a more complete list of the simplifications `oppy` makes, see XXX.
+For a more complete list of the simplifications oppy makes, see 
+simplifications.md.
