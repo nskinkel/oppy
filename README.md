@@ -55,8 +55,8 @@ Now you're ready to clone this repository:
 $ git clone https://github.com/nskinkel/oppy
 ```
 
-Finally, `cd` into the `oppy` directory, add it to your $PYTHONPATH, and
-and you're all set!
+Finally, `cd` into the `oppy` directory, add it to your $PYTHONPATH, and you're
+all set!
 
 ```
 $ export PYTHONPATH=$PYTHONPATH:$(pwd)
