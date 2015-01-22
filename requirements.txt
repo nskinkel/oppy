@@ -1,4 +1,4 @@
-pynacl >= 0.3.0
+pynacl >= 0.3.0 # not available through pip yet
 twisted >= 14.0
 stem
 ipaddress
