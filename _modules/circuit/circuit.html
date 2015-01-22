@@ -621,45 +621,36 @@
 <span class="sd">        whether or not this circuit&#39;s exit relay&#39;s exit policy claims to</span>
 <span class="sd">        support this request.</span>
 
-<span class="sd">        .. note:: For host type requests, I&#39;d like to just check the exit</span>
-<span class="sd">            policy of the exit relay to see if it allows exits to the</span>
-<span class="sd">            desired port. However, I can&#39;t seem to get stem&#39;s</span>
-<span class="sd">            exit_policy.can_exit_to() function to work when it&#39;s passed only</span>
-<span class="sd">            a port with no IP address. I&#39;m not sure if this is a bug in</span>
-<span class="sd">            stem or how I&#39;m using it. Ideally, in the case of host type</span>
-<span class="sd">            requests, we&#39;d check if the exit relay&#39;s exit policy claims to</span>
-<span class="sd">            support exits to the requested port. Currently stem&#39;s</span>
-<span class="sd">            exit_policy.can_exit_to() always returns False when passed just</span>
-<span class="sd">            a port as an argument (at least when it&#39;s loaded with real</span>
-<span class="sd">            exit policies from server descriptors).</span>
-
 <span class="sd">        :param oppy.util.exitrequest.ExitRequest request: the request to</span>
 <span class="sd">            check if this circuit can handle</span>
 <span class="sd">        :returns: **bool** **True** if this circuit thinks it can handle</span>
 <span class="sd">            the request, False otherwise</span>
 <span class="sd">        &#39;&#39;&#39;</span>
-        <span class="c"># don&#39;t accept any new requests if we&#39;re buffering</span>
+        <span class="c"># don&#39;t accept any new requests if we&#39;re waiting on a SendMe cell</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="o">==</span> <span class="n">CState</span><span class="o">.</span><span class="n">BUFFERING</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">False</span>
 
-        <span class="c"># workaround for stem&#39;s exit_policy.can_exit_to method always</span>
-        <span class="c"># returning false when passed just a port. ideally, we&#39;d check if</span>
-        <span class="c"># exiting to the desired port is allowed and then make a more educated</span>
-        <span class="c"># guess about whether or not the exit will support this stream. for</span>
-        <span class="c"># now, if it&#39;s a host request we just assume we can support it.</span>
+        <span class="c"># XXX we need a more intelligent way of guessing about stream</span>
+        <span class="c"># support when the circuit is still PENDING</span>
         <span class="k">if</span> <span class="n">request</span><span class="o">.</span><span class="n">is_host</span><span class="p">:</span>
-            <span class="c"># XXX stem (possible) bug workaround</span>
-            <span class="c">#return self.path.exit.exit_policy.can_exit_to(port=request.port)</span>
-            <span class="k">return</span> <span class="bp">True</span>
+            <span class="c"># guess that we can support this stream if we&#39;re still being</span>
+            <span class="c"># built</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="o">==</span> <span class="n">CState</span><span class="o">.</span><span class="n">PENDING</span><span class="p">:</span>
+                <span class="k">return</span> <span class="bp">True</span>
+            <span class="c"># otherwise, since it&#39;s a host type request and we can&#39;t</span>
+            <span class="c"># directly check the IP, guess that we can probably support this</span>
+            <span class="c"># request if the relay supports exits on the desired port</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exit</span><span class="o">.</span><span class="n">exit_policy</span><span class="o">.</span><span class="n">can_exit_to</span><span class="p">(</span><span class="n">port</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">port</span><span class="p">,</span>
+                                                          <span class="n">strict</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
         <span class="k">elif</span> <span class="n">request</span><span class="o">.</span><span class="n">is_ipv6</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">ctype</span> <span class="o">==</span> <span class="n">CType</span><span class="o">.</span><span class="n">IPv6</span><span class="p">:</span>
             <span class="c"># just guess that we can support the request if we&#39;re pending</span>
-            <span class="c"># and it&#39;s of the type that this circuit is</span>
+            <span class="c"># and it&#39;s of the same type of this circuit</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="o">==</span> <span class="n">CState</span><span class="o">.</span><span class="n">PENDING</span><span class="p">:</span>
                 <span class="k">return</span> <span class="bp">True</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exit</span><span class="o">.</span><span class="n">exit_policy</span><span class="o">.</span><span class="n">can_exit_to</span><span class="p">(</span><span class="n">address</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">addr</span><span class="p">,</span>
                                                           <span class="n">port</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">port</span><span class="p">)</span>
         <span class="k">elif</span> <span class="n">request</span><span class="o">.</span><span class="n">is_ipv4</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">ctype</span> <span class="o">==</span> <span class="n">CType</span><span class="o">.</span><span class="n">IPv4</span><span class="p">:</span>
-        <span class="c"># just guess that we can support the request if we&#39;re pending</span>
+            <span class="c"># just guess that we can support the request if we&#39;re pending</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_state</span> <span class="o">==</span> <span class="n">CState</span><span class="o">.</span><span class="n">PENDING</span><span class="p">:</span>
                 <span class="k">return</span> <span class="bp">True</span>
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exit</span><span class="o">.</span><span class="n">exit_policy</span><span class="o">.</span><span class="n">can_exit_to</span><span class="p">(</span><span class="n">address</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">addr</span><span class="p">,</span>

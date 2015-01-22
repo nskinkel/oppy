@@ -150,20 +150,6 @@ this request is a host type request (this is probably wrong). If the
 circuit is open and we do have an exit policy to check, then return
 whether or not this circuit&#8217;s exit relay&#8217;s exit policy claims to
 support this request.</p>
-<div class="admonition note">
-<p class="first admonition-title">Note</p>
-<p class="last">For host type requests, I&#8217;d like to just check the exit
-policy of the exit relay to see if it allows exits to the
-desired port. However, I can&#8217;t seem to get stem&#8217;s
-exit_policy.can_exit_to() function to work when it&#8217;s passed only
-a port with no IP address. I&#8217;m not sure if this is a bug in
-stem or how I&#8217;m using it. Ideally, in the case of host type
-requests, we&#8217;d check if the exit relay&#8217;s exit policy claims to
-support exits to the requested port. Currently stem&#8217;s
-exit_policy.can_exit_to() always returns False when passed just
-a port as an argument (at least when it&#8217;s loaded with real
-exit policies from server descriptors).</p>
-</div>
 <table class="docutils field-list" frame="void" rules="none">
 <col class="field-name" />
 <col class="field-body" />

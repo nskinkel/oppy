@@ -243,13 +243,13 @@
     <span class="k">def</span> <span class="nf">_buildExitToIPFilter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">IP</span><span class="p">):</span>
         <span class="sd">&#39;&#39;&#39;Build and return an exit policy filter.</span>
 
-<span class="sd">        Build a function that takes a RelayDescriptor as an argument and </span>
+<span class="sd">        Build a function that takes a RelayDescriptor as an argument and</span>
 <span class="sd">        returns **True** if that relay&#39;s exit policy allows exits to IP.</span>
 
 <span class="sd">        :param str IP: desired IP to exit to</span>
 <span class="sd">        :returns: **function**</span>
 <span class="sd">        &#39;&#39;&#39;</span>
-        <span class="k">return</span> <span class="k">lambda</span> <span class="n">r</span><span class="p">:</span> <span class="n">r</span><span class="o">.</span><span class="n">exit_policy</span><span class="o">.</span><span class="n">can_exit_to</span><span class="p">(</span><span class="n">address</span><span class="o">=</span><span class="n">IP</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+        <span class="k">return</span> <span class="k">lambda</span> <span class="n">r</span><span class="p">:</span> <span class="n">r</span><span class="o">.</span><span class="n">exit_policy</span><span class="o">.</span><span class="n">can_exit_to</span><span class="p">(</span><span class="n">address</span><span class="o">=</span><span class="n">IP</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
 
     <span class="nd">@dispatch</span><span class="p">(</span><span class="n">_build_table</span><span class="p">,</span> <span class="s">&#39;exit_to_port&#39;</span><span class="p">)</span>
     <span class="k">def</span> <span class="nf">_buildExitToPortFilter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">port</span><span class="p">):</span>
@@ -259,7 +259,7 @@
 <span class="sd">        :param int port: port to check</span>
 <span class="sd">        :return: **function**</span>
 <span class="sd">        &#39;&#39;&#39;</span>
-        <span class="k">return</span> <span class="k">lambda</span> <span class="n">r</span><span class="p">:</span> <span class="n">r</span><span class="o">.</span><span class="n">exit_policy</span><span class="o">.</span><span class="n">can_exit_to</span><span class="p">(</span><span class="n">port</span><span class="o">=</span><span class="n">port</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+        <span class="k">return</span> <span class="k">lambda</span> <span class="n">r</span><span class="p">:</span> <span class="n">r</span><span class="o">.</span><span class="n">exit_policy</span><span class="o">.</span><span class="n">can_exit_to</span><span class="p">(</span><span class="n">port</span><span class="o">=</span><span class="n">port</span><span class="p">,</span> <span class="n">strict</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
 
     <span class="nd">@dispatch</span><span class="p">(</span><span class="n">_build_table</span><span class="p">,</span> <span class="s">&#39;exit_to_IP_and_port&#39;</span><span class="p">)</span>
     <span class="k">def</span> <span class="nf">_buildExitToIPAndPortFilter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">arg</span><span class="p">):</span>
