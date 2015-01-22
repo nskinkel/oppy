@@ -216,7 +216,7 @@ class Create2Cell(FixedLenCell):
             raise BadPayloadData(msg)
 
         self.htype = struct.unpack('!H', data[offset:offset + HTYPE_LEN])[0]
-        
+
         if self.htype != DEF.NTOR_HTYPE:
             msg = "Create2 got htype: {}, but oppy only supports ntor: {}."
             raise BadPayloadData(msg.format(self.htype, DEF.NTOR_HTYPE))
@@ -235,12 +235,8 @@ class Create2Cell(FixedLenCell):
             self.hdata = data[offset:offset + self.hlen]
         except IndexError:
             msg = "Create2 hlen was specified to be {} bytes, but actual "
-            msg += "but hdata was {} bytes."
+            msg += "hdata was {} bytes."
             raise BadPayloadData(msg.format(self.hlen, len(data) - offset))
-
-        if len(self.hdata) != self.hlen:
-            msg = "Create2 expcted len(hdata) to be 84 for ntor, got: {}."
-            raise BadPayloadData(msg.format(len(self.hdata)))
 
     def __repr__(self):
         fmt = '{}, htype={}, hlen={}, hdata={}'
