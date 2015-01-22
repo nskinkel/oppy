@@ -194,13 +194,13 @@ class PathConstraints(object):
     def _buildExitToIPFilter(self, IP):
         '''Build and return an exit policy filter.
 
-        Build a function that takes a RelayDescriptor as an argument and 
+        Build a function that takes a RelayDescriptor as an argument and
         returns **True** if that relay's exit policy allows exits to IP.
 
         :param str IP: desired IP to exit to
         :returns: **function**
         '''
-        return lambda r: r.exit_policy.can_exit_to(address=IP, strict=False)
+        return lambda r: r.exit_policy.can_exit_to(address=IP, strict=True)
 
     @dispatch(_build_table, 'exit_to_port')
     def _buildExitToPortFilter(self, port):
@@ -210,7 +210,7 @@ class PathConstraints(object):
         :param int port: port to check
         :return: **function**
         '''
-        return lambda r: r.exit_policy.can_exit_to(port=port, strict=False)
+        return lambda r: r.exit_policy.can_exit_to(port=port, strict=True)
 
     @dispatch(_build_table, 'exit_to_IP_and_port')
     def _buildExitToIPAndPortFilter(self, arg):

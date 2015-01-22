@@ -572,45 +572,36 @@ class Circuit(object):
         whether or not this circuit's exit relay's exit policy claims to
         support this request.
 
-        .. note:: For host type requests, I'd like to just check the exit
-            policy of the exit relay to see if it allows exits to the
-            desired port. However, I can't seem to get stem's
-            exit_policy.can_exit_to() function to work when it's passed only
-            a port with no IP address. I'm not sure if this is a bug in
-            stem or how I'm using it. Ideally, in the case of host type
-            requests, we'd check if the exit relay's exit policy claims to
-            support exits to the requested port. Currently stem's
-            exit_policy.can_exit_to() always returns False when passed just
-            a port as an argument (at least when it's loaded with real
-            exit policies from server descriptors).
-
         :param oppy.util.exitrequest.ExitRequest request: the request to
             check if this circuit can handle
         :returns: **bool** **True** if this circuit thinks it can handle
             the request, False otherwise
         '''
-        # don't accept any new requests if we're buffering
+        # don't accept any new requests if we're waiting on a SendMe cell
         if self._state == CState.BUFFERING:
             return False
 
-        # workaround for stem's exit_policy.can_exit_to method always
-        # returning false when passed just a port. ideally, we'd check if
-        # exiting to the desired port is allowed and then make a more educated
-        # guess about whether or not the exit will support this stream. for
-        # now, if it's a host request we just assume we can support it.
+        # XXX we need a more intelligent way of guessing about stream
+        # support when the circuit is still PENDING
         if request.is_host:
-            # XXX stem (possible) bug workaround
-            #return self.path.exit.exit_policy.can_exit_to(port=request.port)
-            return True
+            # guess that we can support this stream if we're still being
+            # built
+            if self._state == CState.PENDING:
+                return True
+            # otherwise, since it's a host type request and we can't
+            # directly check the IP, guess that we can probably support this
+            # request if the relay supports exits on the desired port
+            return self.path.exit.exit_policy.can_exit_to(port=request.port,
+                                                          strict=True)
         elif request.is_ipv6 and self.ctype == CType.IPv6:
             # just guess that we can support the request if we're pending
-            # and it's of the type that this circuit is
+            # and it's of the same type of this circuit
             if self._state == CState.PENDING:
                 return True
             return self.path.exit.exit_policy.can_exit_to(address=request.addr,
                                                           port=request.port)
         elif request.is_ipv4 and self.ctype == CType.IPv4:
-        # just guess that we can support the request if we're pending
+            # just guess that we can support the request if we're pending
             if self._state == CState.PENDING:
                 return True
             return self.path.exit.exit_policy.can_exit_to(address=request.addr,
