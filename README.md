@@ -1,4 +1,4 @@
-[Build Status](https://travis-ci.org/nskinkel/oppy.svg?branch=master)
+[![Build Status](https://travis-ci.org/nskinkel/oppy.svg?branch=master)](https://travis-ci.org/nskinkel/oppy)
 
 #oppy
 `oppy` is a Tor onion proxy implementation written in Python. oppy does not 
