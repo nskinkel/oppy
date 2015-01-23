@@ -1,4 +1,7 @@
-pynacl >= 0.3.0 # not available through pip yet
+# pynacl >= 0.3.0
+# not available through pip yet, commented out as a temporary
+# workaround to get travis-ci working. this will get fixed when
+# tests begin to be written for code that uses pynacl
 twisted >= 14.0
 stem
 ipaddress
