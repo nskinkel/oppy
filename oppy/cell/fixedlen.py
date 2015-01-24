@@ -423,6 +423,9 @@ class DestroyCell(FixedLenCell):
         '''
         start, _ = self.payloadRange()
         self.reason = struct.unpack('!B', data[start:start + REASON_LEN])[0]
+        if self.reason not in DEF.DESTROY_TRUNCATE_REASONS:
+            msg = 'Unrecognized DESTROY reason: {}'.format(self.reason)
+            raise BadPayloadData(msg)
 
     def __repr__(self):
         fmt = '{}, reason={}'
