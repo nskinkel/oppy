@@ -80,8 +80,6 @@ class TLVTriple(object):
         '''
         :param str addr: IP address for this TLVTriple
         '''
-        self._readable_addr = addr
-
         addr = ipaddress.ip_address(addr)
         if isinstance(addr, ipaddress.IPv4Address):
             self.addr_type = DEF.IPv4_ADDR_TYPE
@@ -119,9 +117,11 @@ class TLVTriple(object):
         if addr_type == DEF.IPv4_ADDR_TYPE:
             value = data[offset:offset + DEF.IPv4_ADDR_LEN]
             offset += DEF.IPv4_ADDR_LEN
+            value = ipaddress.ip_address(value).exploded
         elif addr_type == DEF.IPv6_ADDR_TYPE:
             value = data[offset:offset + DEF.IPv6_ADDR_LEN]
             offset += DEF.IPv6_ADDR_LEN
+            value = ipaddress.ip_address(value).exploded
         else:
             msg = "TLVTriple can't parse type {0} yet.".format(addr_type)
             raise ValueError(msg)
@@ -144,4 +144,10 @@ class TLVTriple(object):
         return TLV_ADDR_TYPE_LEN + TLV_ADDR_LEN_LEN + len(self.value)
 
     def __repr__(self):
-        return "TLVTriple(addr={})".format(repr(self._readable_addr))
+        fmt = "TLVTriple(addr={})"
+        return fmt.format(repr(ipaddress.ip_address(self.value).exploded))
+
+    def __eq__(self, other):
+        if type(other) is type(self):
+            return self.__dict__ == other.__dict__
+        return False
