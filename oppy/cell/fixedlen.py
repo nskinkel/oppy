@@ -171,16 +171,16 @@ class Create2Cell(FixedLenCell):
         :returns: :class:`~oppy.cell.fixedlen.Create2Cell`
         '''
         if htype != DEF.NTOR_HTYPE:
-            msg = '`htype` was {}, but we currently only can do '
+            msg = 'htype was {}, but we currently only can do '
             msg += '{} (NTor)'
             raise BadPayloadData(msg.format(htype, DEF.NTOR_HTYPE))
 
         if hlen != DEF.NTOR_HLEN:
-            msg = '`htype` was NTor but hlen was {}, expected {}.'
+            msg = 'htype was NTor but hlen was {}, expected {}.'
             raise BadPayloadData(msg.format(hlen, DEF.NTOR_HLEN))
 
         if hlen != len(hdata):
-            msg = '`hlen` was {}, but `len(hdata)` was {}.'
+            msg = 'hlen was {}, but len(hdata) was {}.'
             raise BadPayloadData(msg.format(hlen, len(hdata)))
 
         h = FixedLenCell.Header(circ_id=circ_id,
@@ -279,6 +279,37 @@ class Created2Cell(FixedLenCell):
             return ret
         else:
             return FixedLenCell.padCellBytes(ret, self.header.link_version)
+
+    @staticmethod
+    def make(circ_id, hlen=DEF.NTOR_HLEN, hdata='', link_version=3):
+        '''Build and return a Created2 cell, using default values where
+        possible.
+
+        Automatically create and use an appropriate FixedLenCell.Header.
+
+        .. note: oppy only supports the NTor handshake, so *make()* will
+            currently reject any *htype*'s or *hlen*'s that are not
+            recognized as used in the NTor handshake.
+
+        :param int circ_id: Circuit ID to use for this cell
+        :param int hlen: Length of **hdata** segment
+        :param str hdata: Actual handshake data to use (an *onion skin*)
+        :param int link_version: Link Protocol version in use
+        :returns: :class:`~oppy.cell.fixedlen.Created2Cell`
+        '''
+        if hlen != DEF.NTOR_HLEN:
+            msg = 'hlen was {}, expected {}.'
+            raise BadPayloadData(msg.format(hlen, DEF.NTOR_HLEN))
+
+        if hlen != len(hdata):
+            msg = 'hlen was {}, but len(hdata) was {}.'
+            raise BadPayloadData(msg.format(hlen, len(hdata)))
+
+        h = FixedLenCell.Header(circ_id=circ_id,
+                                cmd=DEF.CREATED2_CMD,
+                                link_version=link_version)
+
+        return Created2Cell(h, hlen=hlen, hdata=hdata)
 
     def _parsePayload(self, data):
         '''Parse the string *data* and extract cell fields.
