@@ -126,6 +126,11 @@ class FixedLenCell(Cell):
             fmt = "FixedLenCell.Header(circ_id={}, cmd={}, link_version={})"
             return fmt.format(self.circ_id, self.cmd, self.link_version)
 
+        def __eq__(self, other):
+            if type(other) is type(self):
+                return self.__dict__ == other.__dict__
+            return False
+
 
 HTYPE_LEN = 2
 HLEN_LEN  = 2
