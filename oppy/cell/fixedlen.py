@@ -532,8 +532,7 @@ class NetInfoCell(FixedLenCell):
         .. note: Addresses here are represented as type/length/value
             structures, defined in :class:`~oppy.cell.util.TLVTriple`.
 
-            Reference: tor-spec.txt
-            Section: 6.4
+            Reference: tor-spec.txt, Section 6.4
 
         :param :class:`~oppy.cell.fixedlen.FixedLenCell.Header` header:
             header to use with this cell
@@ -622,18 +621,17 @@ class NetInfoCell(FixedLenCell):
         offset += len(self.other_or_address)
 
         self.num_addresses = data[offset:offset + NUM_ADDRESSES_LEN]
+        self.num_addresses = struct.unpack('!B', self.num_addresses)[0]
         offset += NUM_ADDRESSES_LEN
 
-        n = struct.unpack('!B', self.num_addresses)[0]
-
         self.this_or_addresses = []
-        for i in xrange(n):
+        for i in xrange(self.num_addresses):
             t = TLVTriple.parse(data, offset)
             self.this_or_addresses.append(t)
             offset += len(t)
 
     def __repr__(self):
-        fmt = '{}, timestamp={}, other_or_addresses={}, '
+        fmt = '{}, timestamp={}, other_or_address={}, '
         fmt += 'num_addresses={}, this_or_addresses={}'
         fmt = 'NetInfoCell({})'.format(fmt)
         return fmt.format(repr(self.header), repr(self.timestamp),
