@@ -80,6 +80,8 @@ class TLVTriple(object):
         '''
         :param str addr: IP address for this TLVTriple
         '''
+        self._readable_addr = addr
+
         addr = ipaddress.ip_address(addr)
         if isinstance(addr, ipaddress.IPv4Address):
             self.addr_type = DEF.IPv4_ADDR_TYPE
@@ -140,3 +142,6 @@ class TLVTriple(object):
 
     def __len__(self):
         return TLV_ADDR_TYPE_LEN + TLV_ADDR_LEN_LEN + len(self.value)
+
+    def __repr__(self):
+        return "TLVTriple(addr={})".format(repr(self._readable_addr))
