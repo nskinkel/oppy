@@ -8,7 +8,7 @@ import ipaddress
 import oppy.cell.definitions as DEF
 import oppy.util.tools as tools
 
-from oppy.cell.exceptions import BadLinkSpecifier
+from oppy.cell.exceptions import BadLinkSpecifier, BadPayloadData
 
 
 class LinkSpecifier(object):
@@ -152,4 +152,57 @@ class TLVTriple(object):
     def __eq__(self, other):
         if type(other) is type(self):
             return self.__dict__ == other.__dict__
+        return False
+
+CERT_TYPE_LEN = 1
+CERT_LEN_LEN = 2
+SUPPORTED_CERT_TYPES = (1, 2, 3,)
+
+
+class CertsCellPayloadItem(object):
+    
+    __slots__ = ('cert_type', 'cert_len', 'cert')
+
+    def __init__(self, cert_type, cert_len, cert):
+        self.cert_type = cert_type
+        self.cert_len = cert_len
+        self.cert = cert
+
+    def getBytes(self):
+        ret = struct.pack('!B', self.cert_type)
+        ret += struct.pack('!H', self.cert_len)
+        ret += self.cert
+        return ret
+
+    @staticmethod
+    def parse(data, offset):
+        cert_type = struct.unpack('!B',
+                                  data[offset: offset + CERT_TYPE_LEN])[0]
+        offset += CERT_TYPE_LEN
+        if cert_type not in SUPPORTED_CERT_TYPES:
+            msg = "Got cert type {}, but oppy only supports cert types {}."
+            raise BadPayloadData(msg.format(cert_type, SUPPORTED_CERT_TYPES))
+
+        cert_len = struct.unpack('!H', data[offset: offset + CERT_LEN_LEN])[0]
+        offset += CERT_LEN_LEN
+
+        cert = data[offset: offset + cert_len]
+
+        return CertsCellPayloadItem(cert_type, cert_len, cert)
+
+    def __repr__(self):
+        fmt = "CertsCellPayloadItem(cert_type={}, cert_len={}, cert={})"
+        return fmt.format(repr(self.cert_type), repr(self.cert_len),
+                          repr(self.cert))
+
+    def __len__(self):
+        return 1 + 2 + len(self.cert)
+
+    def __eq__(self, other):
+        if type(other) is type(self):
+            equal = True
+            equal &= (self.cert_type == other.cert_type)
+            equal &= (self.cert_len == other.cert_len)
+            equal &= (self.cert == other.cert)
+            return equal
         return False
