@@ -8,6 +8,7 @@ import oppy.cell.definitions as DEF
 
 from oppy.cell.cell import Cell
 from oppy.cell.exceptions import BadCellHeader, BadPayloadData
+from oppy.cell.util import CertsCellPayloadItem
 
 
 class VarLenCell(Cell):
@@ -245,22 +246,24 @@ class AuthorizeCell(VarLenCell):
 
 NUM_CERT_LEN  = 1
 CERT_TYPE_LEN = 1
-CERT_LEN_LEN  = 2
+CERT_LEN_LEN = 2
+MAX_CERTS_PER_CELL = 3
 
 
 class CertsCell(VarLenCell):
     '''.. note:: tor-spec, Section 4.2'''
 
-    def __init__(self, header, num_certs=None, cert_bytes=None):
+    def __init__(self, header, num_certs=None, cert_payload_items=None):
         '''
         :param :class:`~cell.varlen.VarLenCell.Header` header:
             header to use with this cell
         :param int num_certs: number of certificates in this cell
-        :param str cert_bytes: raw bytes representing the certs in this cell
+        :param list cert_payload_items: a list of
+            oppy.cell.util.CertsCellPayloadItems to be included in this cell
         '''
         self.header = header
         self.num_certs = num_certs
-        self.cert_bytes = cert_bytes
+        self.cert_payload_items = cert_payload_items
 
     def getBytes(self, trimmed=False):
         '''Build and return raw byte string represeting this cell.
@@ -269,7 +272,29 @@ class CertsCell(VarLenCell):
         :returns: **str** raw byte string representing this cell.
         '''
         ret = self.header.getBytes()
-        return ret + struct.pack('!B', self.num_certs) + self.cert_bytes
+        ret += struct.pack('!B', self.num_certs)
+        for cert_item in self.cert_payload_items:
+            ret += cert_item.getBytes()
+        return ret
+
+    @staticmethod
+    def make(circ_id, cert_payload_items, link_version=3):
+        
+        num_certs = len(cert_payload_items)
+        if num_certs > MAX_CERTS_PER_CELL:
+            msg = "CertsCell cannot have more than {} certificates per cell."
+            msg += " Found {}."
+            raise BadPayloadData(msg.format(MAX_CERTS_PER_CELL, num_certs))
+
+        payload_len = NUM_CERT_LEN
+        for cert_item in cert_payload_items:
+            payload_len += len(cert_item)
+
+        h = VarLenCell.Header(circ_id=circ_id, cmd=DEF.CERTS_CMD,
+                              payload_len=payload_len,
+                              link_version=link_version)
+
+        return CertsCell(h, num_certs, cert_payload_items)
 
     def _parsePayload(self, data):
         '''Parse data and extract this cell's fields.
@@ -289,31 +314,33 @@ class CertsCell(VarLenCell):
         self.num_certs = struct.unpack('!B',
                                        data[offset:offset + NUM_CERT_LEN])[0]
         offset += NUM_CERT_LEN
+        if self.num_certs > MAX_CERTS_PER_CELL:
+            msg = "CertsCell cannot have more than {} certificates per cell."
+            msg += " Found {}."
+            raise BadPayloadData(msg.format(MAX_CERTS_PER_CELL,
+                                            self.num_certs))
 
-        self.cert_bytes = ''
+        self.cert_payload_items = []
 
         try:
             for i in xrange(self.num_certs):
-                self.cert_bytes += data[offset:offset + CERT_TYPE_LEN]
-                offset += CERT_TYPE_LEN
-
-                clen = data[offset:offset + CERT_LEN_LEN]
-                self.cert_bytes += clen
-                offset += CERT_LEN_LEN
-                clen = struct.unpack('!H', clen)[0]
-
-                self.cert_bytes += data[offset:offset + clen]
-                offset += clen
+                cert_payload_item = CertsCellPayloadItem.parse(data, offset)
+                offset += len(cert_payload_item)
+                self.cert_payload_items.append(cert_payload_item)
+                # catch times when the sender 'lies' and sends a cert
+                # larger than the claimed payload length of the cell
+                if offset > end:
+                    raise IndexError
         except IndexError:
             msg = "CertsCell payload was not enough bytes to construct "
             msg += "a valid CertsCell."
             raise BadPayloadData(msg)
 
     def __repr__(self):
-        fmt = 'header={}, num_certs={}, cert_bytes={}'
+        fmt = 'header={}, num_certs={}, cert_payload_items={}'
         fmt = 'CertsCell({})'.format(fmt)
         return fmt.format(repr(self.header), repr(self.num_certs),
-                          repr(self.cert_bytes))
+                          repr(self.cert_payload_items))
 
 
 VERSIONS_LEN = 2
@@ -405,4 +432,24 @@ class VPaddingCell(VarLenCell):
     .. note: VPadding cells have no fields, so just use fields from the
         parent class.
     '''
-    pass
+
+    @staticmethod
+    def make(circ_id, padding_len, link_version=3):
+        '''Construct and return a VPaddingCell, using default values
+        where possible.
+
+        Automatically create and use an appropriate FixedLenCell.Header.
+
+        .. note: oppy can currently only support Link Protocol versions
+            3 and 4, so any other versions will be rejected.
+
+        :param int padding_len: how many bytes of padding to use
+        :param int link_version: Link Protocol version in use
+        :returns: :class:`~cell.varlen.VPaddingCell`
+        '''
+
+        h = VarLenCell.Header(circ_id=circ_id, cmd=DEF.VPADDING_CMD,
+                              payload_len=padding_len,
+                              link_version=link_version)
+
+        return VPaddingCell(h, payload="\x00" * padding_len)
