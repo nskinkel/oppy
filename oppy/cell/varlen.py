@@ -117,6 +117,8 @@ class VarLenCell(Cell):
 
 CHALLENGE_LEN = 32
 N_METHODS_LEN = 2
+NUM_SUPPORTED_METHODS = 1
+SUPPORTED_METHODS = (struct.pack('!H', 1),)
 
 
 class AuthChallengeCell(VarLenCell):
@@ -127,7 +129,7 @@ class AuthChallengeCell(VarLenCell):
         :param :class:`~cell.varlen.VarLenCell.Header` header:
             header, initialized with values
         :param str challenge: challenge bytes for use with this cell
-        :param str n_methods: number of 'methods' in use with this cell
+        :param int n_methods: number of 'methods' in use with this cell
         :param str methods: authentication methods that the responder will
             accept
         '''
@@ -136,6 +138,22 @@ class AuthChallengeCell(VarLenCell):
         self.n_methods = n_methods
         self.methods = methods
 
+    @staticmethod
+    def make(circ_id, challenge, methods, link_version=3):
+
+        AuthChallengeCell._checkChallenge(challenge)
+        AuthChallengeCell._checkNMethods(len(methods))
+        AuthChallengeCell._checkMethods(methods)
+
+        n_methods = len(methods)
+
+        payload_len = len(challenge) + N_METHODS_LEN + n_methods * 2
+        h = VarLenCell.Header(circ_id=circ_id, cmd=DEF.AUTH_CHALLENGE_CMD,
+                              payload_len=payload_len,
+                              link_version=link_version)
+
+        return AuthChallengeCell(h, challenge, n_methods, methods)
+
     def getBytes(self, trimmed=False):
         '''Build and return raw byte string representing this cell.
 
@@ -143,7 +161,11 @@ class AuthChallengeCell(VarLenCell):
         :returns: str -- raw bytes representing this cell.
         '''
         ret = self.header.getBytes()
-        return ret + self.challenge + self.n_methods + self.methods
+        ret += self.challenge
+        ret += struct.pack('!H', self.n_methods)
+        for method in self.methods:
+            ret += method
+        return ret
 
     def _parsePayload(self, data):
         '''Parse data and extract this cell's fields.
@@ -155,27 +177,52 @@ class AuthChallengeCell(VarLenCell):
         start, end = self.payloadRange()
         offset = start
 
-        # payload of auth challenge must be even number bytes
-        if len(data[start:end]) % 2 != 0:
-            msg = 'AuthChallenge cell payload must be an even number '
-            msg += 'of bytes.'
-            raise BadPayloadData(msg)
-
-        self.challenge = data[offset:offset + CHALLENGE_LEN]
+        challenge = data[offset:offset + CHALLENGE_LEN]
         offset += CHALLENGE_LEN
 
-        self.n_methods = data[offset:offset + N_METHODS_LEN]
+        n_methods = data[offset:offset + N_METHODS_LEN]
+        n_methods = struct.unpack("!H", n_methods)[0]
         offset += N_METHODS_LEN
 
-        n = struct.unpack('!H', self.n_methods)[0]
+        methods = []
+        for method in xrange(n_methods):
+            methods.append(data[offset:offset + 2])
+            offset += 2
 
-        if end - start < CHALLENGE_LEN + N_METHODS_LEN + 2 * n:
-            msg = "AuthChallengeCell specified {} bytes of 'methods', but "
-            msg += "only {} bytes were available."
-            raise BadPayloadData(msg.format(n,
-                                 end - start - CHALLENGE_LEN - N_METHODS_LEN))
+        AuthChallengeCell._checkChallenge(challenge)
+        AuthChallengeCell._checkNMethods(len(methods))
+        AuthChallengeCell._checkMethods(methods)
 
-        self.methods = data[offset:offset + 2 * n]
+        self.challenge = challenge
+        self.n_methods = n_methods
+        self.methods = methods
+
+    @staticmethod
+    def _checkChallenge(challenge):
+        if len(challenge) != CHALLENGE_LEN:
+            msg = "AuthChallengeCell must have a 'challenge' of length {}."
+            msg += " Got challenge of length {}."
+            raise BadPayloadData(msg.format(CHALLENGE_LEN, len(challenge)))
+
+    @staticmethod
+    def _checkNMethods(n_methods):
+        if n_methods != NUM_SUPPORTED_METHODS:
+            msg = "AuthChallengeCells currently only support {} methods. "
+            msg += "Got {} methods."
+            raise BadPayloadData(msg.format(NUM_SUPPORTED_METHODS,
+                                            n_methods))
+
+    @staticmethod
+    def _checkMethods(methods):
+        for method in methods:
+            if len(method) != 2:
+                msg = "AuthChallengeCell auth methods must be 2 bytes long."
+                msg += " Found auth method {} bytes long."
+                raise BadPayloadData(msg.format(len(method)))
+            if method not in SUPPORTED_METHODS:
+                msg = "Tried to use method {}, but oppy only supports method"
+                msg += " {}."
+                raise BadPayloadData(method, SUPPORTED_METHODS)
 
     def __repr__(self):
         fmt = '{}, challenge={}, n_methods={}, methods={}'
