@@ -521,6 +521,7 @@ class EncryptedCell(FixedLenCell):
 
 TIMESTAMP_LEN     = 4
 NUM_ADDRESSES_LEN = 1
+MAX_THIS_OR_ADDRESSES = 5
 
 
 class NetInfoCell(FixedLenCell):
@@ -581,6 +582,12 @@ class NetInfoCell(FixedLenCell):
         if timestamp is None:
             timestamp = struct.pack('!I', int(time.time()))
 
+        if len(this_or_addresses) > MAX_THIS_OR_ADDRESSES:
+            msg = "oppy only supports up to 5 'this_or_addresses' in a "
+            msg += "NetInfoCell, received: {}."
+            msg = msg.format(MAX_THIS_OR_ADDRESSES)
+            raise BadPayloadData(msg)
+
         return NetInfoCell(h, timestamp=timestamp,
                            other_or_address=other_or_address,
                            num_addresses=len(this_or_addresses),
@@ -623,6 +630,12 @@ class NetInfoCell(FixedLenCell):
         self.num_addresses = data[offset:offset + NUM_ADDRESSES_LEN]
         self.num_addresses = struct.unpack('!B', self.num_addresses)[0]
         offset += NUM_ADDRESSES_LEN
+
+        if self.num_addresses > MAX_THIS_OR_ADDRESSES:
+            msg = "oppy only supports up to 5 'this_or_addresses' in a "
+            msg += "NetInfoCell, received: {}."
+            msg = msg.format(MAX_THIS_OR_ADDRESSES)
+            raise BadPayloadData(msg)
 
         self.this_or_addresses = []
         for i in xrange(self.num_addresses):
