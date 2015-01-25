@@ -80,7 +80,7 @@ class TLVTriple(object):
         '''
         :param str addr: IP address for this TLVTriple
         '''
-        addr = ipaddress.ip_address(addr)
+        addr = ipaddress.ip_address(unicode(addr))
         if isinstance(addr, ipaddress.IPv4Address):
             self.addr_type = DEF.IPv4_ADDR_TYPE
             self.addr_len  = DEF.IPv4_ADDR_LEN
@@ -110,10 +110,12 @@ class TLVTriple(object):
         addr_type = struct.unpack('!B', data[offset:offset +
                                              TLV_ADDR_TYPE_LEN])[0]
         offset += TLV_ADDR_TYPE_LEN
+
         # use addr_len for hostname types
         addr_len  = struct.unpack('!B', data[offset:offset +
                                              TLV_ADDR_LEN_LEN])[0]
         offset += TLV_ADDR_LEN_LEN
+
         if addr_type == DEF.IPv4_ADDR_TYPE:
             value = data[offset:offset + DEF.IPv4_ADDR_LEN]
             offset += DEF.IPv4_ADDR_LEN
