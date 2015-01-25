@@ -169,32 +169,25 @@ class V3FSM(object):
             msg = 'Unexpected number of certificates in Certs cell: {0}'
             raise HandshakeFailed(msg.format(cell.num_certs))
 
-        payload = cell.cert_bytes
-
-        # skip length byte in payload
         id_cert = None
         link_cert = None
-        offset = 0
-
-        #   XXX this should be tremendously simplified, and certs cell should
-        #       probably already have done this parsing in its construction.
 
         # The CERTS cell contains exactly one CertType 1 "Link" certificate.
         # The CERTS cell contains exactly one CertType 2 "ID" certificate.
-        for i in xrange(cell.num_certs):
-            ctype = struct.unpack('!1B', payload[offset:offset + 1])[0]
-            offset += 1
-            clen = struct.unpack('!H', payload[offset:offset + 2])[0]
-            offset += 2
+        LINK_CERT_TYPE = 1
+        ID_CERT_TYPE = 2
 
-            if ctype != 1 and ctype != 2:
+        for i in xrange(cell.num_certs):
+            cert_item = cell.cert_payload_items[i]
+            ctype = cert_item.cert_type
+
+            if ctype != LINK_CERT_TYPE and ctype != ID_CERT_TYPE:
                 msg = 'Unexpected certificate type in Certs cell: {0}'
                 raise HandshakeFailed(msg.format(ctype))
 
-            cert = ssl.DER_cert_to_PEM_cert(payload[offset:offset + clen])
-            offset += clen
+            cert = ssl.DER_cert_to_PEM_cert(cert_item.cert)
 
-            if ctype == 1:
+            if ctype == LINK_CERT_TYPE:
                 link_cert = SSLCrypto.load_certificate(SSLCrypto.FILETYPE_PEM,
                                                        cert)
             else:
