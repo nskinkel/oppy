@@ -660,4 +660,19 @@ class PaddingCell(FixedLenCell):
         fields.
 
     '''
-    pass
+    @staticmethod
+    def make(circ_id, link_version=3):
+        '''Build and return a Padding cell, using default values where
+        possible.
+
+        Automatically create and use an appropriate FixedLenCell.Header.
+
+        :param int circ_id: Circuit ID to use for this cell
+        :param int link_version: Link Protocol version in use.
+        :returns: :class:`~oppy.cell.fixedlen.NetInfoCell`
+        '''
+        h = FixedLenCell.Header(circ_id=circ_id,
+                                cmd=DEF.PADDING_CMD,
+                                link_version=link_version)
+        PAD_BYTE = "\x00"
+        return PaddingCell(h, PAD_BYTE * DEF.MAX_PAYLOAD_LEN)
