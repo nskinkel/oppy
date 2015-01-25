@@ -10,6 +10,6 @@ branches:
         - master
 script:
     - export PYTHONPATH=${PYTHONPATH}:$(pwd)
-    - coverage run --source oppy $(which trial) oppy
+    - coverage run --branch --source oppy $(which trial) oppy
 after_success:
     - coveralls
