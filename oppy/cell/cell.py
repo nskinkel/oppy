@@ -214,6 +214,11 @@ class Cell(object):
         _, end = self.payloadRange()
         return end
 
+    def __eq__(self, other):
+        if type(self) is type(other):
+            return self.__dict__ == other.__dict__
+        return False
+
     class Header(object):
         '''A dummy header type that exists only to be overriden by classes
         that inherit from :class:`~oppy.cell.cell.Cell`.'''
