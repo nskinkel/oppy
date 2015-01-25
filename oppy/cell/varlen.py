@@ -115,6 +115,11 @@ class VarLenCell(Cell):
             return fmt.format(self.circ_id, self.cmd, self.payload_len,
                               self.link_version)
 
+        def __eq__(self, other):
+            if type(self) is type(other):
+                return self.__dict__ == other.__dict__
+            return False
+
 
 CHALLENGE_LEN = 32
 N_METHODS_LEN = 2
