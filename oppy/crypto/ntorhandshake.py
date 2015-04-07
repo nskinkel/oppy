@@ -24,7 +24,7 @@ import base64
 import hashlib
 import hkdf
 
-from nacl import c
+from nacl import bindings
 from nacl.public import PrivateKey, PublicKey
 
 from oppy.crypto import util
@@ -180,7 +180,7 @@ class NTorHandshake(object):
         :returns: **str** result
         '''
         # args are: exponent, base
-        ret = c.crypto_scalarmult(bytes(self._secret_key),
-                                  bytes(PublicKey(base)))
+        ret = bindings.crypto_scalarmult(bytes(self._secret_key),
+                                         bytes(PublicKey(base)))
         self.is_bad |= util.constantStrAllZero(ret)
         return ret
