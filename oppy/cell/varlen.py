@@ -228,7 +228,7 @@ class AuthChallengeCell(VarLenCell):
             if method not in SUPPORTED_METHODS:
                 msg = "Tried to use method {}, but oppy only supports method"
                 msg += " {}."
-                raise BadPayloadData(method, SUPPORTED_METHODS)
+                raise BadPayloadData(msg.format(method, SUPPORTED_METHODS))
 
     def __repr__(self):
         fmt = '{}, challenge={}, n_methods={}, methods={}'
