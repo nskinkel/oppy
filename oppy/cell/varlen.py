@@ -271,7 +271,7 @@ class CertsCell(VarLenCell):
         self.cert_payload_items = cert_payload_items
 
     def getBytes(self, trimmed=False):
-        '''Build and return raw byte string represeting this cell.
+        '''Build and return raw byte string representing this cell.
 
         :param bool trimmed: ignore for varlen cells
         :returns: **str** raw byte string representing this cell.

@@ -108,7 +108,7 @@ RELAY_CMD_IDS = (
     RELAY_EXTENDED2_CMD,
 )
 
-# Reasons a RelayEndCell may be sent or recieved
+# Reasons a RelayEndCell may be sent or received
 REASON_MISC             = 1
 REASON_RESOLVEFAILED    = 2
 REASON_CONNECTREFUSED   = 3

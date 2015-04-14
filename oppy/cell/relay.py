@@ -143,7 +143,7 @@ class RelayCell(FixedLenCell):
         :param :class:`~cell.relay.RelayCell.RelayHeader` header:
             relay header in use
         :param str data: data string to extract command from
-        :returns: **str** recongnized command
+        :returns: **str** recognized command
         '''
         circ_len = 2 if header.link_version <= 3 else 4
         start = circ_len + 1 + 1
