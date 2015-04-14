@@ -89,7 +89,7 @@ class Cell(object):
         .. note:: *data* str is not modified.
 
         :param str data: raw bytes to parse and extract a cell from
-        :param int link_verison: Link Protocol version in use. For fixed-
+        :param int link_version: Link Protocol version in use. For fixed-
             length cells, this parameter dictates whether we expect 512
             bytes (Link Protocol <= 3) or 514 bytes.
         :param bool encrypted: whether or not we think this cell is
@@ -143,7 +143,7 @@ class Cell(object):
             caller.
 
         This is expected to be called only by *Cell.parse()*. *cls* is
-        expected to be one of the three abtract types of cells:
+        expected to be one of the three abstract types of cells:
 
             - :class:`~oppy.cell.fixedlen.FixedLenCell`
             - :class:`~oppy.cell.varlen.VarLenCell`
@@ -220,7 +220,7 @@ class Cell(object):
         return False
 
     class Header(object):
-        '''A dummy header type that exists only to be overriden by classes
+        '''A dummy header type that exists only to be overridden by classes
         that inherit from :class:`~oppy.cell.cell.Cell`.'''
         def __init__(self):
             raise NotImplementedError("This is an abstract class.")
