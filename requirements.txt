@@ -6,3 +6,4 @@ hkdf == 0.0.1
 pycrypto == 2.6.1
 pyopenssl == 0.14
 service-identity == 14.0
+mock == 1.0
