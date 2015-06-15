@@ -6,7 +6,6 @@ install:
     "pip install coveralls -r requirements.txt"
 branches:
     only:
-        - testing
         - master
 script:
     - export PYTHONPATH=${PYTHONPATH}:$(pwd)
