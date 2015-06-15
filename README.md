@@ -1,6 +1,6 @@
 [![Build Status](https://travis-ci.org/nskinkel/oppy.svg?branch=master)](https://travis-ci.org/nskinkel/oppy)
 
-[![Coverage Status](https://coveralls.io/repos/nskinkel/oppy/badge.svg?branch=testing)](https://coveralls.io/r/nskinkel/oppy?branch=testing)
+[![Coverage Status](https://coveralls.io/repos/nskinkel/oppy/badge.svg?branch=master)](https://coveralls.io/r/nskinkel/oppy?branch=master)
 
 #oppy
 `oppy` is a Tor onion proxy implementation written in Python. oppy does not 
