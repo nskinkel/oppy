@@ -23,7 +23,6 @@ import logging
 from twisted.internet import defer
 
 from oppy.cell.definitions import MAX_RPAYLOAD_LEN
-from oppy.shared import circuit_manager
 
 
 SENDME_THRESHOLD = 450
@@ -34,7 +33,7 @@ STREAM_WINDOW_SIZE = 50
 class Stream(object):
     '''Represent a Tor Stream.'''
 
-    def __init__(self, request, socks):
+    def __init__(self, circuit_manager, request, socks):
         '''
         :param oppy.util.exitrequest.ExitRequest request: connection request
             for this stream
@@ -51,7 +50,7 @@ class Stream(object):
         self._deliver_window = STREAM_WINDOW_INIT
         self._package_window = STREAM_WINDOW_INIT
         self.circuit = None
-        self._circuit_request = circuit_manager.requestOpenCircuit(self)
+        self._circuit_request = circuit_manager.getOpenCircuit(self)
         self._circuit_request.addCallback(self._registerNewStream)
 
     def _registerNewStream(self, circuit):
@@ -67,9 +66,9 @@ class Stream(object):
         self._circuit_request = None
         # notify circuit it has a new stream
         # NOTE: circuit sets this stream's stream_id
-        self.circuit.registerStream(self)
+        self.circuit.addStreamAndSetStreamID(self)
         # tell the circuit to setup this stream (i.e. send a RELAY_BEGIN cell)
-        self.circuit.initiateStream(self)
+        self.circuit.beginStream(self)
         # start listening for incoming cells from our circuit
         self._pollReadQueue()
 
@@ -84,7 +83,7 @@ class Stream(object):
         LEN = MAX_RPAYLOAD_LEN
         return [data[i:i + LEN] for i in xrange(0, len(data), LEN)]
 
-    def recvData(self, data):
+    def recv(self, data):
         '''Put data received from the network on this stream's read queue.
 
         Called when the circuit attached to this stream passes data to this
@@ -95,7 +94,7 @@ class Stream(object):
         '''
         self._read_queue.put(data)
 
-    def writeData(self, data):
+    def send(self, data):
         '''Split *data* into chunks that can fit in a RelayData cell, and put
         each chunk on this stream's write queue.
 
@@ -130,7 +129,7 @@ class Stream(object):
         :param str data: data received from attached SOCKS protocol instance
             to be written to the attached circuit
         '''
-        self.circuit.writeData(data, self.stream_id)
+        self.circuit.send(data, self)
         self._decPackageWindow()
 
     def _recvData(self, data):
@@ -141,7 +140,7 @@ class Stream(object):
         :param str data: data received from attached circuit, to be written
             to the attached SOCKS protocol instance
         '''
-        self.socks.writeData(data)
+        self.socks.recv(data)
         self._decDeliverWindow()
 
     def _decDeliverWindow(self):
@@ -155,7 +154,7 @@ class Stream(object):
         #     here before just blindly writing a RELAY_SENDME
         self._deliver_window -= 1
         if self._deliver_window <= SENDME_THRESHOLD:
-            self.circuit.sendStreamSendMe(self.stream_id)
+            self.circuit.sendStreamSendMe(self)
             self._deliver_window += STREAM_WINDOW_SIZE
         self._pollReadQueue()
 
@@ -210,6 +209,7 @@ class Stream(object):
         logging.debug(msg)
         self.socks.closeFromStream()
 
+    # TODO: fix docs
     def closeFromSOCKS(self):
         '''Called when the attached SOCKS protocol object is done with this
         stream.
@@ -217,7 +217,11 @@ class Stream(object):
         Request that circuit send a RelayEnd cell on our behalf and notify
         circuit we're now closed.
         '''
-        msg = "Stream {} on circuit {} closing from SOCKS."
-        msg = msg.format(self.stream_id, self.circuit.circuit_id)
+        msg = "Stream id {} ".format(self.stream_id)
+        if self.circuit is not None:
+            msg = msg + "on circuit {} closing from SOCKS."
+            msg = msg.format(self.circuit.circuit_id)
+            self.circuit.removeStream(self)
+        else:
+            msg = msg + "on unassigned circuit closing from SOCKS."
         logging.debug(msg)
-        self.circuit.unregisterStream(self)

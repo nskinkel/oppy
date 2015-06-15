@@ -29,208 +29,103 @@ from twisted.internet import defer
 
 import oppy.crypto.util as crypto
 
-from oppy.cell.definitions import (
-    MAX_RPAYLOAD_LEN,
-    BACKWARD_CELLS,
-    DESTROY_CMD,
-    RELAY_DATA_CMD,
-    RELAY_END_CMD,
-    RELAY_CONNECTED_CMD,
-    RELAY_SENDME_CMD,
-    RELAY_TRUNCATED_CMD,
-    RELAY_DROP_CMD,
-    RELAY_RESOLVED_CMD,
-    REASON_DONE,
-)
-
-from oppy.circuit.handshake.exceptions import (
-    BadHandshakeState,
-    HandshakeFailed,
-    ReceivedDestroyCell,
-    UnexpectedCell,
-)
-
+from oppy.cell.definitions import MAX_RPAYLOAD_LEN, REASON_DONE
 from oppy.cell.fixedlen import DestroyCell
-from oppy.cell.relay import RelayBeginCell
-from oppy.cell.relay import RelayDataCell
-from oppy.cell.relay import RelayEndCell
-from oppy.cell.relay import RelaySendMeCell
-
-from oppy.circuit.handshake.ntorfsm import NTorFSM
-from oppy.crypto.exceptions import KeyDerivationFailed, UnrecognizedCell
-from oppy.path.path import PathSelector
-from oppy.util.tools import dispatch, enum
-
-
-CIRCUIT_WINDOW_THRESHOLD_INIT = 1000
-SENDME_THRESHOLD = 900
-WINDOW_SIZE = 100
-
-
-CState = enum(
-    PENDING=0,
-    OPEN=1,
-    BUFFERING=2,
+from oppy.cell.relay import (
+    RelayBeginCell,
+    RelayConnectedCell,
+    RelayDataCell,
+    RelayDropCell,
+    RelayEndCell,
+    RelayResolvedCell,
+    RelaySendMeCell,
+    RelayTruncatedCell,
 )
 
-
-CType = enum(
-    IPv4=0,
-    IPv6=1,
+# TODO: put common stuff in definitions
+from oppy.circuit.definitions import (
+    CIRCUIT_WINDOW_THRESHOLD_INIT,
+    SENDME_THRESHOLD,
+    WINDOW_SIZE,
+    CState,
+    CircuitType,
+    BACKWARD_CELL_TYPES,
+    BACKWARD_RELAY_CELL_TYPES,
+    MAX_STREAMS_V3,
 )
+from oppy.util.tools import ctr, enum
 
 
+# Major TODO's:
+#               - figure out policy for handling cells with unexpected origins
+#               - catch/handle crypto exceptions explicitly
+#               - catch/handle connection.send exceptions explicitly
+#               - fix documentation
 class Circuit(object):
 
-    # dispatch table used to lookup handler functions for incoming cells
-    # filled in with the `dispatch` decorator
-    _response_table = {}
-    
-    def __init__(self, cid, path_constraints):
+    def __init__(self, circuit_manager, circuit_id, conn, circuit_type,
+                 path, crypt_path, max_streams=MAX_STREAMS_V3):
         '''
         :param int cid: id of this circuit
         :param oppy.path.path.PathConstraints path_constraints: the constraints
             that this circuit's path should satisfy
         '''
-        self.circuit_id = cid
-        self.path_constraints = path_constraints
-        self.connection = None
-        self._selector = PathSelector()
+        self._circuit_manager = circuit_manager
+        self.circuit_id = circuit_id
+        self._connection = conn
+        self.circuit_type = circuit_type
+        self._path = path
+        self._crypt_path = crypt_path
         # _read_queue handles incoming cells from the network
         self._read_queue = defer.DeferredQueue()
-        self._read_deferred = None
+        self._read_task = None
         # _write_queue handles incoming data from local applications
         self._write_queue = defer.DeferredQueue()
-        self._write_deferred = None
-        self._stream_map = {}
-        self._stream_ctr = 1
-        self._crypt_path = []
-        self._state = CState.PENDING
+        self._write_task = None
+        self._streams = {}
+        self._ctr = ctr(max_streams)
+        self._max_streams = max_streams
+        self._state = CState.OPEN
         # deliver window is incoming data cells
         self._deliver_window = CIRCUIT_WINDOW_THRESHOLD_INIT
         # package window is outgoing data cells
         self._package_window  = CIRCUIT_WINDOW_THRESHOLD_INIT
 
-        if path_constraints.is_IPv6_exit is True:
-            self.ctype = CType.IPv6
-        else:
-            self.ctype = CType.IPv4
-
-        # get a path and a connection
-        self._startBuilding()
-
-    ##################################################################
-    #################### CIRCUIT BUILD METHODS #######################
-    ##################################################################
-
-    @defer.inlineCallbacks
-    def _startBuilding(self):
-        '''Begin building this circuit.
-
-        The following steps are taken to build a circuit:
-
-            1. Choose a path that satisfies this circuit's path constraints.
-            2. Get a TLS connection to the entry node on this circuit's
-               chosen path.
-            3. Notify this connection that it has a new circuit on it.
-            4. Begin the circuit handshake (i.e. send a Create2 cell to the
-               entry node).
-            5. Start listening for incoming cells (i.e. _pollReadQueue())
-
-        If any of these steps fail, the circuit will be destroyed.
-        '''
-        from oppy.shared import connection_pool
-
-        try:
-            self.path = yield self._selector.getPath(self.path_constraints)
-        except IndexError as e:
-            msg = "Circuit {} could not get a valid path. Destroying circuit."
-            msg = msg.format(self.circuit_id)
-            logging.debug(msg)
-            self._closeCircuit()
-            return
-
-        msg = "Circuit {} using path: {}."
-        logging.debug(msg.format(self.circuit_id, self.path))
-
-        try:
-            self.connection = yield connection_pool.getConnection(self.path.entry)
-        except Exception as e:
-            msg = "Circuit {}'s TLS connection failed: {}. Circuit destroyed."
-            msg = msg.format(self.circuit_id, str(e))
-            logging.debug(msg)
-            self._closeCircuit()
-            return
-
-        msg = "Circuit {} got a connection to {}."
-        logging.debug(msg.format(self.circuit_id, self.path.entry.address))
-
-        # register ourselves with this circuit's connection
-        self.connection.addNewCircuit(self)
-        # start the handshaking process immediately
-        self._initiateCircuitHandshake()
-        # can now start listening for incoming cells
         self._pollReadQueue()
-
-    def _initiateCircuitHandshake(self):
-        '''Initiate the handshaking process for this circuit.
-
-        Create a new handshake object (for now, always an NTorFSM) and
-        write the initiating cell to the entry node (for now, always a
-        Create2 cell).
-        '''
-        self._handshake = NTorFSM(self.circuit_id, self.path,
-                                  self._crypt_path)
-        cell = self._handshake.getInitiatingCell()
-        self.connection.writeCell(cell)
-        msg = "Circuit {} initiated NTor handshake with {}."
-        logging.debug(msg.format(self.circuit_id, self.path.entry.address))
-
-    def _openCircuit(self):
-        '''_openCircuit() is called when this circuit has successfully
-        completed a handshake and derived crypto keys with every relay
-        on its path.
-
-        Do three things as soon as this circuit finishes extending itself
-        through its whole path:
-
-            1. Set this circuit's state to CState.OPEN
-            2. Notify the CircuitManager that this circuit is ready to
-               be assinged streams.
-            3. Start listening for incoming data from local applications
-               (i.e. _pollWriteQueue()).
-
-        '''
-        from oppy.shared import circuit_manager
-
-        self._handshake = None
-
-        self._state = CState.OPEN
-        # notify circuit manager we're open
-        circuit_manager.circuitOpened(self)
-        # notify each pending stream that we're now open
-        # can now start listening for outgoing data
         self._pollWriteQueue()
 
-    ##################################################################
-    ###################### QUEUEING METHODS ##########################
-    ##################################################################
+    def canHandleRequest(self, request):
+        '''Return **True** if this circuit can (probably/possibly) handle
+        the *request*.
 
-    def _pollReadQueue(self):
-        '''Try pulling a cell from this circuit's read_queue and add a
-        callback to handle the cell when it's available.
+        If this circuit is pending we may not have a relay exit relay whose
+        exit policy we can check, so make a guess and return True if the
+        request is of the same type as this circuit. Always return True if
+        this request is a host type request (this is probably wrong). If the
+        circuit is open and we do have an exit policy to check, then return
+        whether or not this circuit's exit relay's exit policy claims to
+        support this request.
+
+        :param oppy.util.exitrequest.ExitRequest request: the request to
+            check if this circuit can handle
+        :returns: **bool** **True** if this circuit thinks it can handle
+            the request, False otherwise
         '''
-        self._read_deferred = self._read_queue.get()
-        self._read_deferred.addCallback(self._recvCell)
+        if self._state == CState.BUFFERING:
+            return False
 
-    def _pollWriteQueue(self):
-        '''Try pulling data from this circuit's write_queue and add a
-        callback to process the data when it's available.
-        '''
-        self._write_deferred = self._write_queue.get()
-        self._write_deferred.addCallback(self._writeData)
+        if len(self._streams) == self._max_streams:
+            return False
 
-    def writeData(self, data, stream_id):
+        if request.is_host:
+            return self._path.exit.exit_policy.can_exit_to(port=request.port,
+                                                           strict=False)
+        else:
+            return self._path.exit.exit_policy.can_exit_to(
+                                       address=request.addr, port=request.port)
+
+
+    def send(self, data, stream):
         '''Put a tuple of (data, stream_id) on this circuit's write_queue.
         
         Called by stream's when they want to write data to this circuit.
@@ -242,10 +137,13 @@ class Circuit(object):
         :param str data: data string to write to this circuit
         :param int stream_id: id of the stream writing this data
         '''
-        assert len(data) <= MAX_RPAYLOAD_LEN
-        self._write_queue.put((data, stream_id))
+        if len(data) > MAX_RPAYLOAD_LEN:
+            msg = ("Data cannot be longer than {}. len(data) == {}."
+                   .format(MAX_RPAYLOAD_LEN, len(data)))
+            raise ValueError(msg)
+        self._write_queue.put((data, stream.stream_id))
 
-    def recvCell(self, cell):
+    def recv(self, cell):
         '''Put the incoming cell on this circuit's read_queue to be processed.
         
         Called be a connection when it receives a cell addressed to this
@@ -255,9 +153,138 @@ class Circuit(object):
         '''
         self._read_queue.put(cell)
 
-    ##################################################################
-    ################### CELL PROCESSING METHODS ######################
-    ##################################################################
+    def removeStream(self, stream):
+        '''Unregister *stream* from this circuit.
+
+        Remove the stream from this circuit's stream map and send a
+        RelayEndCell. If the number of streams on this circuit drops to
+        zero, check with the circuit manager to see if this circuit should
+        be destroyed. If so, tear down the circuit.
+
+        :param oppy.stream.stream.Stream stream: stream to unregister
+        '''
+        try:
+            del self._streams[stream.stream_id]
+            cell = RelayEndCell.make(self.circuit_id, stream.stream_id)
+            self._encryptAndSendCell(cell)
+        except KeyError:
+            msg = ("Circuit {} notified that stream {} was closed, but "
+                   "the circuit has no reference to this stream."
+                   .format(self.circuit_id, stream.stream_id))
+            logging.debug(msg)
+            return
+
+        if len(self._streams) == 0:
+            if self._circuit_manager.shouldDestroyCircuit(self) is True:
+                self._sendDestroyCell()
+                self._closeCircuit()
+                msg = "Destroyed unused circuit {}.".format(self.circuit_id)
+                logging.debug(msg)
+
+    def beginStream(self, stream):
+        '''Initiate a new stream by sending a RelayBeginCell.
+
+        Create the begin cell, encrypt it, and immediately write it to this
+        circuit's connection.
+
+        :param oppy.stream.stream.Stream stream: stream on behalf of which
+            we're sending a RelayBeginCell
+        '''
+        msg = ("Circuit {} sending a RelayBeginCell for stream {}."
+               .format(self.circuit_id, stream.stream_id))
+        logging.debug(msg)
+
+        cell = RelayBeginCell.make(self.circuit_id, stream.stream_id,
+                                   stream.request)
+        self._encryptAndSendCell(cell)
+
+    def addStreamAndSetStreamID(self, stream):
+        '''Register the new *stream* on this circuit.
+
+        Set the stream's stream_id and add it to this circuit's stream map.
+
+        :param oppy.stream.stream.Stream stream: stream to add to this circuit
+        '''
+        # find the next available stream ID and assign it to the requesting
+        # stream. fail if we can't assign an ID (should never happen).
+        if len(self._streams) == self._max_streams:
+            msg = ("Circuit {} tried to add a stream, but it's stream map was "
+                   "full. This is a bug.".format(self.circuit_id))
+            raise RuntimeError(msg) 
+
+        assigned = False
+        for _ in xrange(self._max_streams):
+            _id = next(self._ctr)
+            if _id not in self._streams:
+                self._streams[_id] = stream
+                stream.stream_id = _id
+                assigned = True
+                break
+
+        if not assigned:
+            msg = ("Circuit {} failed to assign a requesting stream an ID, "
+                   "even though it's stream map only contains {} streams. "
+                   "This is a bug."
+                   .format(self.circuit_id, len(self._streams)))
+            raise RuntimeError(msg)
+
+        msg = ("Circuit {} added a new stream {}."
+               .format(self.circuit_id, stream.stream_id))
+        logging.debug(msg)
+
+    def sendStreamSendMe(self, stream):
+        '''Send a stream-level RelaySendMe cell with its stream_id equal to
+        *stream_id*.
+
+        Construct the send me cell, encrypt it, and immediately write it to
+        this circuit's connection.
+
+        :param int stream_id: stream_id to use in the RelaySendMeCell
+        '''
+        cell = RelaySendMeCell.make(self.circuit_id,
+                                    stream_id=stream.stream_id)
+        self._encryptAndSendCell(cell)
+
+        msg = ("Circuit {} sent a RelaySendMeCell for stream {}."
+               .format(self.circuit_id, stream.stream_id))
+
+    def destroyCircuitFromManager(self):
+        '''Called by the circuit manager when it decides to destroy this
+        circuit.
+
+        Send a destroy cell and notify this circuit's connection that this
+        circuit is now closed.
+        '''
+        msg = "Circuit {} destroyed by circuit manager."
+        logging.debug(msg.format(self.circuit_id))
+        self._sendDestroyCell()
+        self._closeCircuit(notify_manager=False)
+
+    def destroyCircuitFromConnection(self):
+        '''Called when a connection closes this circuit (usually because
+        the connection went down).
+
+        Primarily called when we lose the TLS connection to our connection
+        object.  Do a 'hard' destroy and immediately close all associated
+        streams.  Do not send a destroy cell.
+        '''
+        msg = "Circuit {} destroyed by its connection."
+        logging.debug(msg.format(self.circuit_id))
+        self._closeCircuit()
+
+    def _pollReadQueue(self):
+        '''Try pulling a cell from this circuit's read_queue and add a
+        callback to handle the cell when it's available.
+        '''
+        self._read_task = self._read_queue.get()
+        self._read_task.addCallback(self._recvCell)
+
+    def _pollWriteQueue(self):
+        '''Try pulling data from this circuit's write_queue and add a
+        callback to process the data when it's available.
+        '''
+        self._write_task = self._write_queue.get()
+        self._write_task.addCallback(self._writeData)
 
     def _writeData(self, data_stream_id_tuple):
         '''Write data to this circuit's connection.
@@ -276,59 +303,11 @@ class Circuit(object):
             to package into a RelayData cell
         '''
         data, stream_id = data_stream_id_tuple
-        assert len(data) <= MAX_RPAYLOAD_LEN
         cell = RelayDataCell.make(self.circuit_id, stream_id, data)
-        enc = crypto.encryptCellToTarget(cell, self._crypt_path)
-        self.writeCell(enc)
+        self._encryptAndSendCell(cell)
         self._decPackageWindow()
 
     def _recvCell(self, cell):
-        '''Pass *cell* to the appropriate handler depending on this circuit's
-        state and listen for more incoming cells.
-
-        :param cell cell: the cell received from the network.
-        '''
-        if self._state == CState.PENDING:
-            self._recvHandshakeCell(cell)
-        else:
-            self._recvCircuitCell(cell)
-        self._pollReadQueue()
-
-    def _recvHandshakeCell(self, cell):
-        '''Called when this circuit is in state CState.PENDING and a cell
-        is received from the network.
-
-        Attempt to process this cell. If the handshake receives an invalid
-        or malformed cell, destroy this circuit. If the handshake has
-        a new cell to send, immediately write it to this circuit's
-        connection. If the handshake is complete with every node on this
-        circuit's path, open the circuit (e.g. call self._openCircuit()).
-
-        :param cell cell: the cell received from the network.
-        '''
-        try:
-            response = self._handshake.recvCell(cell)
-        except ReceivedDestroyCell as e:
-            logging.debug(str(e))
-            self.destroyCircuitFromRelay(cell)
-            return
-        except (BadHandshakeState, HandshakeFailed, UnexpectedCell) as e:
-            self.destroyCircuitProtocolViolation(cell)
-            logging.debug(str(e))
-            return
-        except KeyDerivationFailed:
-            msg = "NTor key derivation failed on circuit {}."
-            logging.debug(msg.format(self.circuit_id))
-            self.destroyCircuitProtocolViolation(cell)
-            return
-
-        if response is not None:
-            self.connection.writeCell(response)
-        if self._handshake.isDone():
-            self._openCircuit()
-            self._handshake = None
-
-    def _recvCircuitCell(self, cell):
         '''Called when this circuit receives a cell and it's state is
         CState.OPEN.
 
@@ -337,14 +316,21 @@ class Circuit(object):
 
         :param cell cell: the cell received from the network.
         '''
-        # receiving a non-backward cell violates the Tor Protocol.
-        # immediately tear down the circuit
-        if cell.header.cmd not in BACKWARD_CELLS:
-            self.destroyCircuitProtocolViolation(cell)
-        elif cell.header.cmd == DESTROY_CMD:
-            self._processDestroy(cell)
+        if type(cell) not in BACKWARD_CELL_TYPES:
+            msg = ("Circuit {} received a {} cell that violates the Tor "
+                   "protocol. Destroying circuit."
+                   .format(self.circuit_id, type(cell)))
+            logging.warning(msg)
+            self._sendDestroyCell()
+            self._closeCircuit()
+        elif isinstance(cell, DestroyCell):
+            msg = ("Circuit {} received a DestroyCell. Tearing down circuit."
+                   .format(self.circuit_id))
+            logging.debug(msg)
+            self._closeCircuit()
         else:
             self._recvRelayCell(cell)
+            self._pollReadQueue()
 
     def _recvRelayCell(self, cell):
         '''Called when this circuit receives some sort of RelayCell from
@@ -359,38 +345,41 @@ class Circuit(object):
         :param cell cell: cell received from the network
         '''
         try:
-            cell, origin = crypto.decryptCellUntilRecognized(cell,
-                                                             self._crypt_path)
-        # drop unrecognized cells
-        except UnrecognizedCell:
-            msg = "Circuit {} received an unrecognized cell."
-            logging.debug(msg.format(self.circuit_id))
+            cell, origin = crypto.decryptCell(cell, self._crypt_path)
+        except Exception as e:
+            logging.debug("Circuit {} failed to decrypt an incoming cell. "
+                          "Reason: {}. Dropping cell."
+                          .format(self.circuit_id, e))
             return
 
-        cmd = cell.rheader.cmd
-        handler = Circuit._response_table[cmd].__get__(self, type(self))
-        handler(cell, origin)
+        if type(cell) not in BACKWARD_RELAY_CELL_TYPES:
+            msg = ("Circuit {} received a non-backward {} relay cell. This "
+                   "is a violation of the Tor protocol, and the circuit will "
+                   "be destroyed.".format(self.circuit_id, type(cell)))
+            logging.warning(msg)
+            self._sendDestroyCell()
+            self._closeCircuit()
+        elif isinstance(cell, RelayDataCell):
+            self._processRelayDataCell(cell, origin)
+        elif isinstance(cell, RelayEndCell):
+            self._processRelayEndCell(cell, origin)
+        elif isinstance(cell, RelayConnectedCell):
+            self._processRelayConnectedCell(cell, origin)
+        elif isinstance(cell, RelaySendMeCell):
+            self._processRelaySendMeCell(cell, origin)
+        elif isinstance(cell, RelayTruncatedCell):
+            self._processRelayTruncatedCell(cell, origin)
+        elif isinstance(cell, RelayDropCell):
+            self._processRelayDropCell(cell, origin)
+        elif isinstance(cell, RelayResolvedCell):
+            self._processRelayResolvedCell(cell, origin)
+        else:
+            msg = ("Circuit {} received an unexpected backward cell {} "
+                   "from relay in position {}. Dropping cell."
+                   .format(self.circuit_id, type(cell), origin))
+            logging.debug(msg)
 
-    def writeCell(self, cell):
-        '''Write a cell to this circuit's connection.
-
-        :param cell cell: cell to write to this circuit's connection
-        '''
-        self.connection.writeCell(cell)
-
-    def _processDestroy(self, cell):
-        '''Called when this circuit receives a destroy cell from the
-        network.
-
-        Immediately tear-down this circuit and all associated streams.
-
-        :param oppy.cell.fixedlen.DestroyCell cell: destroy cell that this
-            circuit received.
-        '''
-        self.destroyCircuitFromRelay(cell)
-
-    @dispatch(_response_table, RELAY_DATA_CMD)
-    def _processRelayData(self, cell, origin):
+    def _processRelayDataCell(self, cell, origin):
         '''Called when this circuit receives an incoming RelayData cell.
 
         Take the following actions:
@@ -411,15 +400,14 @@ class Circuit(object):
         sid = cell.rheader.stream_id
 
         try:
-            self._stream_map[sid].recvData(cell.rpayload)
+            self._streams[sid].recv(cell.rpayload)
             self._decDeliverWindow()
         except KeyError:
-            msg  = 'Got a RELAY_DATA cell for non-existent stream {} '
-            msg += 'on circuit {}. Dropping cell.'
-            logging.debug(msg.format(sid, self.circuit_id))
+            msg  = ("Circuit {} received a RelayDataCell for nonexistent "
+                    "stream {}. Dropping cell.".format(self.circuit_id, sid))
+            logging.debug(msg)
 
-    @dispatch(_response_table, RELAY_END_CMD)
-    def _processRelayEnd(self, cell, origin):
+    def _processRelayEndCell(self, cell, origin):
         '''Called when this circuit receives a RelayEndCell.
 
         Tear down the stream associated with the stream in the RelayEndCell
@@ -434,18 +422,19 @@ class Circuit(object):
         sid = cell.rheader.stream_id
 
         try:
-            self._stream_map[sid].closeFromCircuit()
+            self._streams[sid].closeFromCircuit()
+            # TODO: handle REASON_EXITPOLICY
             if cell.reason != REASON_DONE:
-                msg = "Received a RELAY_END cell on stream {}, and reason "
-                msg += "was not REASON_DONE. Reason: {}."
-                logging.debug(msg.format(sid, cell.reason))
+                msg = ("Circuit {} received a RelayEndCell for stream {}, "
+                       "and reason was not REASON_DONE. Reason: {}."
+                       .format(self.circuit_id, sid, cell.reason))
+                logging.debug(msg)
         except KeyError:
-            msg  = 'Circuit {} received a RELAY_END cell for '
-            msg += 'non-existent stream {}. Dropping cell.'
-            logging.debug(msg.format(self.circuit_id, sid))
+            msg  = ("Circuit {} received a RelayEndCell for nonexistent "
+                    "stream {}. Dropping cell.".format(self.circuit_id, sid))
+            logging.debug(msg)
 
-    @dispatch(_response_table, RELAY_CONNECTED_CMD)
-    def _processRelayConnected(self, cell, origin):
+    def _processRelayConnectedCell(self, cell, origin):
         '''Called when this circuit receives a RelayConnectedCell.
 
         Notify the stream associated with this cell's stream id that it's
@@ -460,14 +449,17 @@ class Circuit(object):
         sid = cell.rheader.stream_id
 
         try:
-            self._stream_map[sid].streamConnected()
+            self._streams[sid].streamConnected()
         except KeyError:
-            msg  = 'Received a RELAY_CONNECTED cell for non-existent '
-            msg += 'stream {} on circuit {}.'
-            logging.debug(msg.format(sid, self.circuit_id))
+            msg = ("Circuit {} received a RelayConnectedCell for nonexistent "
+                   "stream {}. Dropping cell.".format(self.circuit_id, sid))
+            logging.debug(msg)
+            return
 
-    @dispatch(_response_table, RELAY_SENDME_CMD)
-    def _processRelaySendMe(self, cell, origin):
+        logging.debug("Circuit {} received a RelayConnectedCell for "
+                      "stream {}".format(self.circuit_id, sid))
+
+    def _processRelaySendMeCell(self, cell, origin):
         '''Called when this circuit receives a RelaySendMeCell.
 
         If this is a circuit-level sendme cell (i.e. its stream id is zero)
@@ -490,24 +482,18 @@ class Circuit(object):
         '''
         sid = cell.rheader.stream_id
 
-        if self._state == CState.PENDING:
-            msg  = "Received a RELAY_SENDME cell on circuit {} destined for "
-            msg += "stream {}, but circuit's state was {}. Dropping cell."
-            logging.debug(msg.format(self.circuit_id, sid, self._state))
-            return
-
         if sid == 0:
             self._incPackageWindow()
         else:
             try:
-                self._stream_map[sid].incrementPackageWindow()
+                self._streams[sid].incPackageWindow()
             except KeyError:
-                msg  = "Circuit {} received a RELAY_SENDME on "
-                msg += "non-existent stream {}."
-                logging.debug(msg.format(self.circuit_id, sid))
+                msg = ("Circuit {} received a RelaySendMe cell on nonexistent"
+                       " stream {}. Dropping cell."
+                       .format(self.circuit_id, sid))
+                logging.debug(msg)
 
-    @dispatch(_response_table, RELAY_TRUNCATED_CMD)
-    def _processRelayTruncated(self, cell, origin):
+    def _processRelayTruncatedCell(self, cell, origin):
         '''Called when this circuit receives a RelayTruncatedCell.
 
         oppy currently doesn't know how to rebuild or cannabalize circuits,
@@ -518,14 +504,14 @@ class Circuit(object):
         :param int origin: which node on the circuit's path this cell
             came from
         '''
-        msg = "Received a RELAY_TRUNCATED cell on circuit {}."
-        msg += " We can't rebuild circuit paths yet, so circuit {}"
-        msg += " and all associated streams will be destroyed."
-        logging.debug(msg.format(self.circuit_id, self.circuit_id))
-        self.destroyCircuitFromRelay(cell)
+        msg = ("Circuit {} received a RelayTruncatedCell. oppy can't "
+               "rebuild or cannabalize circuits yet, so the circuit will "
+               "be destroyed.".format(self.circuit_id))
+        logging.debug(msg)
+        self._sendDestroyCell()
+        self._closeCircuit()
 
-    @dispatch(_response_table, RELAY_DROP_CMD)
-    def _processRelayDrop(self, cell, origin):
+    def _processRelayDropCell(self, cell, origin):
         '''Called when this circuit receives a RelayDrop cell.
 
         Just drop it :)
@@ -535,12 +521,10 @@ class Circuit(object):
         :param int origin: which node on the circuit's path this cell
             came from
         '''
-        msg  = 'Received a RELAY_DROP cell on circuit {} in state {}. '
-        msg += 'Dropping cell.'
-        logging.debug(msg.format(self.circuit_id, self._state))
+        msg = "Circuit {} received a RelayDropCell.".format(self.circuit_id)
+        logging.debug(msg)
 
-    @dispatch(_response_table, RELAY_RESOLVED_CMD)
-    def _processRelayResolved(self, cell, origin):
+    def _processRelayResolvedCell(self, cell, origin):
         '''Called when this circuit receives a RelayResolvedCell.
 
         oppy doesn't know how to handle these right now, so we just drop
@@ -551,140 +535,9 @@ class Circuit(object):
         :param int origin: which node on the circuit's path this cell
             came from
         '''
-        msg  = "Circuit {} received a RELAY_RESOLVED cell destined for stream "
-        msg += "{}, but we don't know how to handle these yet. Dropping cell."
-        logging.debug(msg.format(self.circuit_id, cell.rheader.stream_id))
-
-    ##################################################################
-    ################### STREAM PROCESSING METHODS ####################
-    ##################################################################
-
-    # return True iff this circuit's exit node can handle the request
-    def canHandleRequest(self, request):
-        '''Return **True** if this circuit can (probably/possibly) handle
-        the *request*.
-
-        If this circuit is pending we may not have a relay exit relay whose
-        exit policy we can check, so make a guess and return True if the
-        request is of the same type as this circuit. Always return True if
-        this request is a host type request (this is probably wrong). If the
-        circuit is open and we do have an exit policy to check, then return
-        whether or not this circuit's exit relay's exit policy claims to
-        support this request.
-
-        :param oppy.util.exitrequest.ExitRequest request: the request to
-            check if this circuit can handle
-        :returns: **bool** **True** if this circuit thinks it can handle
-            the request, False otherwise
-        '''
-        # don't accept any new requests if we're waiting on a SendMe cell
-        if self._state == CState.BUFFERING:
-            return False
-
-        # XXX we need a more intelligent way of guessing about stream
-        # support when the circuit is still PENDING
-        if request.is_host:
-            # guess that we can support this stream if we're still being
-            # built
-            if self._state == CState.PENDING:
-                return True
-            # otherwise, since it's a host type request and we can't
-            # directly check the IP, guess that we can probably support this
-            # request if the relay supports exits on the desired port
-            return self.path.exit.exit_policy.can_exit_to(port=request.port,
-                                                          strict=True)
-        elif request.is_ipv6 and self.ctype == CType.IPv6:
-            # just guess that we can support the request if we're pending
-            # and it's of the same type of this circuit
-            if self._state == CState.PENDING:
-                return True
-            return self.path.exit.exit_policy.can_exit_to(address=request.addr,
-                                                          port=request.port)
-        elif request.is_ipv4 and self.ctype == CType.IPv4:
-            # just guess that we can support the request if we're pending
-            if self._state == CState.PENDING:
-                return True
-            return self.path.exit.exit_policy.can_exit_to(address=request.addr,
-                                                          port=request.port)
-        else:
-            return False
-
-    def _closeAllStreams(self):
-        '''Close all streams associated with this circuit.
-        '''
-        for stream in self._stream_map.values():
-            stream.closeFromCircuit()
-
-    def unregisterStream(self, stream):
-        '''Unregister *stream* from this circuit.
-
-        Remove the stream from this circuit's stream map and send a
-        RelayEndCell. If the number of streams on this circuit drops to
-        zero, check with the circuit manager to see if this circuit should
-        be destroyed. If so, tear down the circuit.
-
-        :param oppy.stream.stream.Stream stream: stream to unregister
-        '''
-        from oppy.shared import circuit_manager
-
-        try:
-            del self._stream_map[stream.stream_id]
-            cell = RelayEndCell.make(self.circuit_id, stream.stream_id)
-            enc = crypto.encryptCellToTarget(cell, self._crypt_path)
-            self.writeCell(enc)
-        except KeyError:
-            msg = "Circuit {} notified that stream {} was closed, but "
-            msg += "circuit has no reference to this stream."
-            logging.debug(msg.format(self.circuit_id, stream.stream_id))
-
-        if len(self._stream_map) == 0:
-            if circuit_manager.shouldDestroyCircuit(self) is True:
-                self._sendDestroyCell()
-                self._closeCircuit()
-                msg = "Destroyed unused circuit {0}.".format(self.circuit_id)
-                logging.debug(msg)
-
-    def initiateStream(self, stream):
-        '''Initiate a new stream by sending a RelayBeginCell.
-
-        Create the begin cell, encrypt it, and immediately write it to this
-        circuit's connection.
-
-        :param oppy.stream.stream.Stream stream: stream on behalf of which
-            we're sending a RelayBeginCell
-        '''
-        cell = RelayBeginCell.make(self.circuit_id, stream.stream_id,
-                                   stream.request)
-        enc = crypto.encryptCellToTarget(cell, self._crypt_path)
-        self.writeCell(enc)
-
-    def registerStream(self, stream):
-        '''Register the new *stream* on this circuit.
-
-        Set the stream's stream_id and add it to this circuit's stream map.
-
-        :param oppy.stream.stream.Stream stream: stream to add to this circuit
-        '''
-        self._stream_map[self._stream_ctr] = stream
-        stream.stream_id = self._stream_ctr
-        self._stream_ctr += 1
-
-    def sendStreamSendMe(self, stream_id):
-        '''Send a stream-level RelaySendMe cell with its stream_id equal to
-        *stream_id*.
-
-        Construct the send me cell, encrypt it, and immediately write it to
-        this circuit's connection.
-
-        :param int stream_id: stream_id to use in the RelaySendMeCell
-        '''
-        cell = RelaySendMeCell.make(self.circuit_id, stream_id=stream_id)
-        enc = crypto.encryptCellToTarget(cell, self._crypt_path)
-        self.writeCell(enc)
-
-    ##################################################################
-    #################### FLOW CONTROL METHODS ########################
-    ##################################################################
+        msg = ("Circuit {} received a RelayResolvedCell for stream {}."
+               .format(self.circuit_id, cell.rheader.stream_id))
+        logging.debug(msg)
 
     def _decDeliverWindow(self):
         '''Decrement this circuit's deliver window.
@@ -696,9 +549,16 @@ class Circuit(object):
         self._deliver_window -= 1
         if self._deliver_window <= SENDME_THRESHOLD:
             cell = RelaySendMeCell.make(self.circuit_id)
-            enc = crypto.encryptCellToTarget(cell, self._crypt_path)
-            self.writeCell(enc)
+            self._encryptAndSendCell(cell)
             self._deliver_window += WINDOW_SIZE
+
+            msg = ("Circuit {}'s delivery window dropped to {}. The circuit "
+                   "sent a circuit-level RelaySendMeCell and incremented "
+                   "its delivery window to {}."
+                   .format(self.circuit_id, self._deliver_window - WINDOW_SIZE,
+                           self._deliver_window))
+            logging.debug(msg)
+
 
     def _decPackageWindow(self):
         '''Decrement this circuit's package window.
@@ -715,7 +575,10 @@ class Circuit(object):
             self._pollWriteQueue()
         else:
             self._state = CState.BUFFERING
-            self._write_deferred = None
+            self._write_task = None
+            msg = ("Circuit {}'s packaging window dropped to 0. The circuit "
+                   "entered a buffering state.".format(self.circuit_id))
+            logging.debug(msg)
 
     def _incPackageWindow(self):
         '''Increment this circuit's package window.
@@ -727,67 +590,21 @@ class Circuit(object):
         data again.
         '''
         self._package_window += WINDOW_SIZE
-        # if we're buffering, we can start writing again
+
+        msg = ("Circuit {} received a circuit-level RelaySendMeCell. Its "
+               "packaging window is now {}."
+               .format(self.circuit_id, self._package_window))
+        logging.debug(msg)
+
         if self._state == CState.BUFFERING and self._package_window > 0:
             self._state = CState.OPEN
-            if self._write_deferred is None:
+
+            msg = ("Circuit {} has transitioned from buffering to open."
+                   .format(self.circuit_id))
+            logging.debug(msg)
+
+            if self._write_task is None:
                 self._pollWriteQueue()
-
-    ##################################################################
-    ################### CIRCUIT TEARDOWN METHODS #####################
-    ##################################################################
-
-    def destroyCircuitProtocolViolation(self, cell):
-        '''Destroy a circuit because the Tor protocol was violated.
-
-        Send a DestroyCell and close the circuit.
-
-        :param cell cell: received cell that violated the Tor protocol.
-        '''
-        msg = "Circuit {0} received a {1} cell that violates the Tor "
-        msg += "protocol. Destroying circuit."
-        logging.warning(msg.format(self.circuit_id, cell.header.cmd))
-        self._sendDestroyCell()
-        self._closeCircuit()
-
-    def destroyCircuitFromRelay(self, cell):
-        '''Called when a DestroyCell is received from a relay on
-        this circuit's path.
-
-        Immediately close the circuit. We don't need to send a DestroyCell
-        in this case.
-
-        :param cell cell: either the DestroyCell or the RelayTruncatedCell
-            that was received.
-        '''
-        msg = "{} cell received on circuit {}. Destroying circuit."
-        logging.debug(msg.format(cell.header.cmd, self.circuit_id))
-        self._closeCircuit()
-
-    def destroyCircuitFromManager(self):
-        '''Called by the circuit manager when it decides to destroy this
-        circuit.
-
-        Send a destroy cell and notify this circuit's connection that this
-        circuit is now closed.
-        '''
-        msg = "Circuit {} destroyed by circuit manager."
-        logging.debug(msg.format(self.circuit_id))
-        self._sendDestroyCell()
-        if self.connection is not None:
-            self.connection.circuitDestroyed(self.circuit_id)
-
-    def destroyCircuitFromConnection(self):
-        '''Called when a connection closes this circuit (usually because
-        the connection went down).
-
-        Primarily called when we lose the TLS connection to our connection
-        object.  Do a 'hard' destroy and immediately close all associated
-        streams.  Do not send a destroy cell.
-        '''
-        msg = "Circuit {} destroyed by its connection."
-        logging.debug(msg.format(self.circuit_id))
-        self._closeCircuit()
 
     def _sendDestroyCell(self):
         '''Send a destroy cell.
@@ -795,20 +612,37 @@ class Circuit(object):
         .. note:: reason NONE is always used when sending forward destroy
             cells to avoid leaking version information.
         '''
-        if self.connection is not None:
-            cell = DestroyCell.make(self.circuit_id)
-            self.connection.writeCell(cell)
+        cell = DestroyCell.make(self.circuit_id)
+        self._connection.send(cell)
 
-    def _closeCircuit(self):
+    def _closeAllStreams(self):
+        for stream in self._streams.values():
+            stream.closeFromCircuit()
+
+    def _encryptAndSendCell(self, cell):
+        try:
+            enc = crypto.encryptCell(cell, self._crypt_path)
+        except Exception as e:
+            msg = ("Error: {}. Failed to encrypt a {} cell on circuit {}. "
+                   "Refusing to send unencrypted cell. Dropping the cell."
+                   .format(e, type(cell), self.circuit_id))
+            logging.warning(msg)
+
+        try:
+            self._connection.send(enc)
+        except Exception as e:
+            msg = ("Error: {}. Failed to send an encrypted cell on circuit "
+                   "{}.".format(e, self.circuit_id))
+            logging.debug(msg)
+
+    def _closeCircuit(self, notify_manager=True):
         '''Close this circuit.
 
         Close all associated streams, notify the circuit manager this
         circuit has closed, and notify this circuit's connection that this
         circuit has closed.
         '''
-        from oppy.shared import circuit_manager
-
         self._closeAllStreams()
-        circuit_manager.circuitDestroyed(self)
-        if self.connection is not None:
-            self.connection.circuitDestroyed(self.circuit_id)
+        if notify_manager is True:
+            self._circuit_manager.circuitDestroyed(self)
+        self._connection.removeCircuit(self)

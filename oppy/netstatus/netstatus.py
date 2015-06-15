@@ -233,7 +233,7 @@ class NetStatus(object):
         gen = parse_file(
             io.BytesIO(raw),
             DEF.STEM_DESCRIPTORS_TYPE,
-            validate=True,
+            validate=False,
             document_handler=DocumentHandler.DOCUMENT,
         )
         descriptors = {}

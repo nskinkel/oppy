@@ -17,7 +17,7 @@ from oppy.cell.fixedlen import (
     PaddingCell,
 )
 from oppy.cell.util import TLVTriple
-from oppy.tests.cell.cellbase import FixedLenTestBase
+from oppy.tests.integration.cell.cellbase import FixedLenTestBase
 
 
 CIRC_ID = 1

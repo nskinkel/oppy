@@ -42,13 +42,14 @@ ConnState = enum(
 class Connection(Protocol):
     '''A TLS connection to an entry node.'''
 
-    def __init__(self, relay):
+    def __init__(self, connection_pool, relay):
         '''
         :param stem.descriptor.server_descriptor.RelayDescriptor relay:
             relay we should create a connection to
         '''
         logging.debug('Creating connection to {0}'.format(relay.address))
         # map all circuits using this connections
+        self._connection_pool = connection_pool
         self._circuit_map = {}
         self._buffer = ''
         self._relay = relay
@@ -56,7 +57,8 @@ class Connection(Protocol):
         self._state = ConnState.PENDING
         self._cell_queue = []
 
-    def writeCell(self, cell):
+    # TODO: fix docs
+    def send(self, cell):
         '''Write a cell to this connections transport.
 
         If this connection is not yet open, append to the cell_queue to be
@@ -125,7 +127,7 @@ class Connection(Protocol):
         :param cell cell: incoming cell
         '''
         try:
-            self._circuit_map[cell.header.circ_id].recvCell(cell)
+            self._circuit_map[cell.header.circ_id].recv(cell)
         # drop cells to circuits we don't know about
         except KeyError:
             msg = "Connection {} received a cell to nonexistent circuit:"
@@ -147,7 +149,7 @@ class Connection(Protocol):
         :param cell cell: incoming handshake cell
         '''
         try:
-            response = self._handshake.recvCell(cell)
+            response = self._handshake.recv(cell)
         except Exception as e:
             logging.debug(str(e))
             self.closeConnection()
@@ -170,7 +172,7 @@ class Connection(Protocol):
         transport and remove them from the queue.
         '''
         for cell in self._cell_queue:
-            self.writeCell(cell)
+            self.send(cell)
         self._cell_queue = None
 
     def connectionMade(self):
@@ -182,7 +184,8 @@ class Connection(Protocol):
         cell = self._handshake.getInitiatingCell()
         self.transport.write(cell.getBytes())
 
-    def addNewCircuit(self, circuit):
+    # TODO: update docs
+    def addCircuit(self, circuit):
         '''Add new a new circuit to the circuit map for this connection.
 
         Raise a ValueError if *circuit.circuit_id* already exists in
@@ -191,21 +194,15 @@ class Connection(Protocol):
         :param oppy.circuit.circuit.Circuit circuit: circuit to add to this
             connection's circuit map
         '''
-        if circuit.circuit_id in self._circuit_map:
-            msg = "Circuit with id {} already exists on connection to {}"
-            msg = msg.format(circuit.circuit_id, self._relay.address)
-            raise ValueError(msg)
         self._circuit_map[circuit.circuit_id] = circuit
 
     def closeConnection(self):
         '''Close this connection and all associated circuits; notify the
         connection pool.
         '''
-        from oppy.shared import connection_pool
-
         logging.debug("Closing connection to {}.".format(self._relay.address))
         self._destroyAllCircuits()
-        connection_pool.removeConnection(self._relay.fingerprint)
+        self._connection_pool.removeConnection(self._relay.fingerprint)
         self.transport.abortConnection()
 
     def connectionLost(self, reason):
@@ -214,12 +211,10 @@ class Connection(Protocol):
 
         :param reason reason: reason this connection was lost
         '''
-        from oppy.shared import connection_pool
-
         msg = "Connection to {} lost: {}."
         logging.warning(msg.format(self._relay.address, reason))
         self._destroyAllCircuits()
-        connection_pool.removeConnection(self._relay.fingerprint)
+        self._connection_pool.removeConnection(self._relay.fingerprint)
 
     def _destroyAllCircuits(self):
         '''Destroy all circuits associated with this connection.
@@ -227,7 +222,8 @@ class Connection(Protocol):
         for circuit in self._circuit_map.values():
             circuit.destroyCircuitFromConnection()
 
-    def circuitDestroyed(self, circuit_id):
+    # TODO: fix docs
+    def removeCircuit(self, circuit):
         '''The circuit with *circuit_id* has been destroyed.
 
         Remove this circuit from this connection's circuit map if we know
@@ -237,18 +233,17 @@ class Connection(Protocol):
 
         :param int circuit_id: id of the circuit that was destroyed
         '''
-        from oppy.shared import connection_pool
-
+        cid = circuit.circuit_id
         try:
-            del self._circuit_map[circuit_id]
+            del self._circuit_map[cid]
         except KeyError:
             msg = "Connection to {} was notified that circuit {} was destroyed"
             msg += ", but connection has no reference to circuit {}."
-            msg = msg.format(self._relay.address, circuit_id, circuit_id)
+            msg = msg.format(self._relay.address, cid, cid)
             logging.debug(msg)
 
         if len(self._circuit_map) == 0:
             fprint = self._relay.fingerprint
-            if connection_pool.shouldDestroyConnection(fprint) is True:
-                connection_pool.removeConnection(fprint)
+            if self._connection_pool.shouldDestroyConnection(fprint) is True:
+                self._connection_pool.removeConnection(fprint)
                 self.closeConnection()

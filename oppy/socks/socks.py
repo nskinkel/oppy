@@ -18,7 +18,7 @@
 
         - forwards all subsequent data from the client to the remote resource
           (through a circuit)
-        - sends all data written to this object's writeData() method to the
+        - sends all data written to this object's recv() method to the
           client application
 
     Throughout this process, this object communicates with the client
@@ -78,7 +78,8 @@ State = enum(
 class OppySOCKSProtocol(Protocol):
     '''Do SOCKS 5 handshake and forward local traffic to streams.'''
 
-    def __init__(self):
+    def __init__(self, circuit_manager):
+        self._circuit_manager = circuit_manager
         self.state = State.HANDSHAKE
         self.request = None
         # An `oppy.stream.stream` object over which the SOCKS client's data
@@ -99,9 +100,9 @@ class OppySOCKSProtocol(Protocol):
         elif self.state == State.REQUEST:
             self._handleRequest(data)
         else:
-            self.stream.writeData(data)
+            self.stream.send(data)
 
-    def writeData(self, data):
+    def recv(self, data):
         '''Write received *data* to local client application.
 
         :param str data: data to write
@@ -232,7 +233,7 @@ class OppySOCKSProtocol(Protocol):
             self.transport.loseConnection()
             return
 
-        self.stream = Stream(self.request, self)
+        self.stream = Stream(self._circuit_manager, self.request, self)
         self.state = State.FORWARDING
         self._sendReply(SUCCEEDED)
 
@@ -261,7 +262,7 @@ class OppySOCKSProtocol(Protocol):
         # stream id. in this case just skip logging and closing that
         # stream and let it die
         if self.stream is not None and hasattr(self.stream, 'stream_id'):
-            msg = "SOCKS on stream {} is done with its local connection."
+            msg = "SOCKS on stream id {} is done with its local connection."
             logging.debug(msg.format(self.stream.stream_id))
             self.stream.closeFromSOCKS()
 
@@ -274,4 +275,9 @@ class OppySOCKSProtocol(Protocol):
 
 class OppySOCKSProtocolFactory(ServerFactory):
     '''Serve *OppySOCKSProtocol* instances.'''
-    protocol = OppySOCKSProtocol
+
+    def __init__(self, circuit_manager):
+        self.circuit_manager = circuit_manager
+
+    def buildProtocol(self, addr):
+        return OppySOCKSProtocol(self.circuit_manager)

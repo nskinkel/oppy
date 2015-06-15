@@ -1,6 +1,7 @@
 # Copyright 2014, 2015, Nik Kinkel
 # See LICENSE for licensing information
 
+# TODO: fix docs (a lot!)
 '''
 .. topic:: PathConstraints
 
@@ -14,28 +15,13 @@
     list of RelayDescriptors):
 
     >>> p = PathConstraints(entry={'ntor': True, 'flags': ['Fast', 'Guard']},
-    >>>                     middle={'ntor': True, 'flags': ['Stable'],
+    >>>                     middle={'ntor': True, 'flags': ['Stable']},
     >>>                     exit={'ntor': True, 'flags': ['Exit'],
     >>>                           'exit_to_port': 443})
     >>> entry_candidates = p.satisfy(node='entry', relays)
 
     *entry_candidates* would now be a list of all relays that satisfy the
     entry node constraints.
-
-
-.. topic:: PathSelector
-
-    PathSelector objects simplify choosing a full path. PathSelectors take
-    a PathConstraints object as an argument to the constructor. When
-    getPath() is called, PathSelectors use these PathConstraints to build
-    a path through the Tor network, taking care of some additional
-    concerns including:
-        
-        - not selecting two relays in the same family
-        - not selecting two relays in the same /16
-        - not selecting the same relay in a path twice
-
-    getPath() returns a deferred that will fire with the chosen Path object.
 
 '''
 import random
@@ -238,59 +224,96 @@ class PathConstraints(object):
         return lambda r: r.fingerprint == fingerprint
 
 
-class PathSelector(object):
-    '''Select a path based on some path constraints.'''
+# TODO: fix docs
+@defer.inlineCallbacks
+def getPath(constraints):
+    '''
+    Filter the current set of RelayDescriptors and randomly choose an
+    entry, middle, and exit node that satisfy the desired path constraints.
 
-    @defer.inlineCallbacks
-    def getPath(self, constraints):
-        '''
-        Filter the current set of RelayDescriptors and randomly choose an
-        entry, middle, and exit node that satisfy the desired path constraints.
+    We currently just use the absolutely bare minimum path constraints,
+    namely:
 
-        We currently just use the absolutely bare minimum path constraints,
-        namely:
+        - no two relays in the same family
+        - no two relays in the same /16
+        - each relay has the required default flags
 
-            - no two relays in the same family
-            - no two relays in the same /16
-            - each relay has the required default flags
+    .. note: oppy currently only knows how to do an NTor handshake, so
+        we only choose RelayDescriptors that have an ntor_onion_key.
 
-        .. note: oppy currently only knows how to do an NTor handshake, so
-            we only choose RelayDescriptors that have an ntor_onion_key.
+    :param oppy.path.path.PathConstraints constraints: path constraints
+        to satisfy
+    :returns: **twisted.internet.defer.Deferred** that fires with an
+        oppy.path.Path
+    '''
 
-        :param oppy.path.path.PathConstraints constraints: path constraints
-            to satisfy
-        :returns: **twisted.internet.defer.Deferred** that fires with an
-            oppy.path.Path
-        '''
-        from oppy.shared import net_status
+    path = []
+    entry = yield getEntry(constraints, path)
+    path.append(entry)
+    middle = yield getMiddle(constraints, path)
+    path.append(middle)
+    exit = yield getExit(constraints, path)
+    defer.returnValue(Path(entry, middle, exit))
 
-        # used to track the "family" fingerprints of relays in the current path
-        family_fprints = set()
-        # /16's of relays in the current path
-        subnets = set()
-        # wait until we have a good set of descriptors to choose from
-        relays = yield net_status.getDescriptors()
-        relays = relays.values()
 
-        entry_list = constraints.satisfy(relays, node='entry')
-        entry = random.choice(entry_list)
+# TODO: add docs
+# TODO: exception handling
+@defer.inlineCallbacks
+def getEntry(constraints, path):
+    family_fprints = _getFamilyFingerprints(path)
+    subnets = _getSubnets(path)
+    from oppy.shared import net_status
+    relays = yield net_status.getDescriptors()
+    relays = relays.values()
+    entry_list = constraints.satisfy(relays, node='entry',
+                                     family_fprints=family_fprints,
+                                     subnets=subnets)
+    entry = random.choice(entry_list)
+    defer.returnValue(entry)
 
-        family_fprints |= set([i.strip(u'$') for i in entry.family])
-        subnets.add(ipaddress.ip_network(entry.address + u'/16', strict=False))
-        relays.remove(entry)
 
-        middle_list = constraints.satisfy(relays, node='middle',
-                                          family_fprints=family_fprints,
-                                          subnets=subnets)
-        middle = random.choice(middle_list)
+# TODO: add docs
+# TODO: exception handling
+@defer.inlineCallbacks
+def getMiddle(constraints, path):
+    family_fprints = _getFamilyFingerprints(path)
+    subnets = _getSubnets(path)
+    from oppy.shared import net_status
+    relays = yield net_status.getDescriptors()
+    relays = relays.values()
 
-        family_fprints |= set([i.strip(u'$') for i in entry.family])
-        subnets.add(ipaddress.ip_network(entry.address + u'/16', strict=False))
-        relays.remove(middle)
+    middle_list = constraints.satisfy(relays, node='middle',
+                                      family_fprints=family_fprints,
+                                      subnets=subnets)
+    middle = random.choice(middle_list)
+    defer.returnValue(middle)
 
-        exit_list = constraints.satisfy(relays, node='exit',
-                                        family_fprints=family_fprints,
-                                        subnets=subnets)
-        exit = random.choice(exit_list)
 
-        defer.returnValue(Path(entry, middle, exit))
+# TODO: add docs
+# TODO: exception handling
+@defer.inlineCallbacks
+def getExit(constraints, path):
+    family_fprints = _getFamilyFingerprints(path)
+    subnets = _getSubnets(path)
+    from oppy.shared import net_status
+    relays = yield net_status.getDescriptors()
+    relays = relays.values()
+    exit_list = constraints.satisfy(relays, node='exit',
+                                    family_fprints=family_fprints,
+                                    subnets=subnets)
+    exit = random.choice(exit_list)
+    defer.returnValue(exit)
+
+
+def _getFamilyFingerprints(path):
+    family_fprints = set()
+    for node in path:
+        family_fprints |= set([i.strip(u'$') for i in node.family])
+    return family_fprints
+
+
+def _getSubnets(path):
+    subnets = set()
+    for node in path:
+        subnets.add(ipaddress.ip_network(node.address + u'/16', strict=False))
+    return subnets

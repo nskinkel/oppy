@@ -64,7 +64,7 @@ class RelayCell(FixedLenCell):
             msg = msg.format(r.rpayload_len, DEF.MAX_RPAYLOAD_LEN)
             raise BadRelayCellHeader(msg)
 
-        if r.cmd not in DEF.RELAY_CMD_IDS:
+        if r.cmd not in DEF.RELAY_CELL_CMDS:
             msg = 'Unrecognized relay cmd {}'.format(r.cmd)
             raise BadRelayCellHeader(msg)
 
@@ -733,14 +733,12 @@ class RelayExtendedCell(RelayCell):
 
 class RelayExtendCell(RelayCell):
     '''.. note:: Not Implemented'''
-    def __init__(self, header):
-        raise NotImplementedError("Can't make RelayExtendCell yet.")
+    pass
 
 
 class RelayResolvedCell(RelayCell):
     '''.. note:: Not Implemented'''
-    def __init__(self, header):
-        raise NotImplementedError("Can't make RelayResolvedCell yet.")
+    pass
 
 
 class RelayResolveCell(RelayCell):
@@ -828,7 +826,48 @@ class RelayTruncatedCell(RelayCell):
                           repr(self.reason))
 
 
+# TODO: docs
+# XXX stream id must be zero
+# XXX set reason to zero to avoid leaking version (Tor spec 5.4)
+# XXX payload is a single byte
+TRUNCATE_STREAM_ID = 0
+TRUNCATE_RPAYLOAD_LEN = 1
+TRUNCATE_REASON = 0
+
+
 class RelayTruncateCell(RelayCell):
-    '''.. note:: Not Implemented'''
+    '''TODO'''
+
     def __init__(self, header, rheader=None, reason=None):
-        raise NotImplementedError("Can't make RelayTruncateCell yet.")
+        self.header = header
+        self.rheader = header
+        self.reason = reason
+        
+    @staticmethod
+    def make(circ_id, reason=TRUNCATE_REASON, link_version=3):
+        """TODO"""
+        h = FixedLenCell.Header(circ_id=circ_id,
+                                cmd=DEF.RELAY_CMD,
+                                link_version=link_version)
+        r = RelayCell.RelayHeader(cmd=DEF.RELAY_TRUNCATE_CMD,
+                                  recognized=DEF.RECOGNIZED,
+                                  stream_id=TRUNCATE_STREAM_ID,
+                                  digest=DEF.EMPTY_DIGEST,
+                                  rpayload_len=TRUNCATE_RPAYLOAD_LEN)
+
+        return RelayTruncateCell(h, r, reason)
+
+    def getBytes(self, trimmed=False):
+        """TODO"""
+        ret = self.header.getBytes() + self.rheader.getBytes()
+        ret += struct.pack('!B', self.reason)
+        if trimmed is True:
+            return ret
+        else:
+            return FixedLenCell.padCellBytes(ret, self.header.link_version)
+
+    def __repr__(self):
+        """TODO"""
+        fmt = 'RelayTruncateCell=({}, rheader={}, reason={})'
+        return fmt.format(repr(self.header), repr(self.rheader),
+                          repr(self.reason))

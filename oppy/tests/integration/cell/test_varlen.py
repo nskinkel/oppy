@@ -12,7 +12,7 @@ from oppy.cell.varlen import (
     VPaddingCell,
 )
 from oppy.cell.util import CertsCellPayloadItem
-from oppy.tests.cell.cellbase import VarLenTestBase
+from oppy.tests.integration.cell.cellbase import VarLenTestBase
 
 
 CIRC_ID = 1

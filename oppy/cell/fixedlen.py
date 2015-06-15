@@ -481,7 +481,7 @@ class EncryptedCell(FixedLenCell):
         if len(payload) != DEF.MAX_PAYLOAD_LEN:
             msg = 'EncryptedCell enc_payload should be padding to length {}; '
             msg += 'found enc_payload length {} instead.'
-            msg = msg.format(DEF.FIXED_LEN_V3_LEN, len(payload))
+            msg = msg.format(DEF.MAX_PAYLOAD_LEN, len(payload))
             raise BadPayloadData(msg)
 
         cmd = DEF.RELAY_EARLY_CMD if early is True else DEF.RELAY_CMD

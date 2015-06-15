@@ -41,6 +41,7 @@ class ConnectionPool(object):
         self._connection_map = {}
         self._pending_map = {}
 
+    # TODO: fix docs
     def getConnection(self, relay):
         '''Return a deferred which will fire (if connection attempt is
         successful) with a Connection Protocol made to *relay*.
@@ -69,6 +70,8 @@ class ConnectionPool(object):
         :returns: **twisted.internet.defer.Deferred** which, on success, will
             callback with an oppy.connection.connection.Connection Protocol
             object
+
+        XXX raises:
         '''
         from twisted.internet import reactor
         
@@ -85,7 +88,7 @@ class ConnectionPool(object):
                         endpoints.SSL4ClientEndpoint(reactor, relay.address,
                                                      relay.or_port,
                                                      TLSClientContextFactory()),
-                        Connection(relay)
+                        Connection(self, relay)
             )
             connection_defer.addCallback(self._connectionSucceeded,
                                          relay.fingerprint)

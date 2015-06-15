@@ -31,13 +31,14 @@ from collections import namedtuple
 
 from twisted.internet import defer
 
-from oppy.circuit.circuit import Circuit, CType
-from oppy.path.path import PathConstraints
-from oppy.path.defaults import (
-    DEFAULT_ENTRY_FLAGS,
-    DEFAULT_MIDDLE_FLAGS,
-    DEFAULT_EXIT_FLAGS,
+from oppy.circuit.circuit import Circuit, CircuitType
+from oppy.circuit.circuitbuildtask import CircuitBuildTask
+from oppy.circuit.definitions import (
+    DEFAULT_OPEN_IPv4,
+    DEFAULT_OPEN_IPv6,
+    MAX_STREAMS_V3,
 )
+from oppy.util.tools import ctr
 
 
 PendingStream = namedtuple("PendingStream", (
@@ -46,44 +47,31 @@ PendingStream = namedtuple("PendingStream", (
 ))
 
 
-DEFAULT_OPEN_IPv4 = 4
-DEFAULT_OPEN_IPv6 = 1
-
-
-DEFAULT_IPv4_CONSTRAINTS = PathConstraints(
-    # add guard here with 'fingerprint': 'value' arg for exit
-    entry={'flags': DEFAULT_ENTRY_FLAGS, 'ntor': True},
-    middle={'flags': DEFAULT_MIDDLE_FLAGS, 'ntor': True},
-    exit={'flags': DEFAULT_EXIT_FLAGS, 'ntor': True},
-)
-DEFAULT_IPv6_CONSTRAINTS = PathConstraints(
-    entry={'flags': DEFAULT_ENTRY_FLAGS, 'ntor': True},
-    middle={'flags': DEFAULT_MIDDLE_FLAGS, 'ntor': True},
-    exit={'flags': DEFAULT_EXIT_FLAGS, 'ntor': True,
-          'exit_IPv6': True},
-)
+# Major TODO's:
 
 
 class CircuitManager(object):
     '''Manage a pool of circuits.'''
 
-    def __init__(self):
+    def __init__(self, connection_pool, autobuild=True):
         logging.debug("Creating circuit manager.")
-        self._open_circuit_map = {}
-        self._pending_circuit_map = {}
-        self._pending_stream_pool = []
-        self._id_counter = 1
+        self._connection_pool = connection_pool
+        self._ctr = ctr(MAX_STREAMS_V3)
+        self._open_circuit_dict = {}
+        self._circuit_build_task_dict = {}
+        self._pending_stream_list = []
         self._min_IPv4_count = DEFAULT_OPEN_IPv4
         self._min_IPv6_count = DEFAULT_OPEN_IPv6
         self._sent_open_message = False
-        # create default circuit pool
-        for i in xrange(self._min_IPv4_count):
-            self._buildNewCircuit(DEFAULT_IPv4_CONSTRAINTS)
 
-        for i in xrange(self._min_IPv6_count):
-            self._buildNewCircuit(DEFAULT_IPv6_CONSTRAINTS)
+        if autobuild is True:
+            self._buildCircuits(self._min_IPv4_count,
+                                circuit_type=CircuitType.IPv4)
+            self._buildCircuits(self._min_IPv6_count,
+                                circuit_type=CircuitType.IPv6)
 
-    def requestOpenCircuit(self, stream):
+    # TODO: fix documentation
+    def getOpenCircuit(self, stream):
         '''Return a deferred that will fire with an open circuit that can
         handle the stream's request.
 
@@ -119,26 +107,21 @@ class CircuitManager(object):
         logging.debug("Circuit manager got an open circuit request.")
         request = stream.request
         d = defer.Deferred()
-        # list of currently open circuits that can handle the given request
-        open_candidates = self._getOpenCandidates(request)
-        # choose a random open circuit for this request if we can
-        if len(open_candidates) > 0:
-            circuit_choice = random.choice(open_candidates)
-            msg = "Assigning request to circuit {}."
-            logging.debug(msg.format(circuit_choice.circuit_id))
-            d.callback(circuit_choice)
-        else:
-            # list of circuits currently being built that can handle the
-            # given request
-            pending_candidates = self._getPendingCandidates(request)
-            # if we have no pending circuits that can handle this request,
-            # start building a new one that can
-            if len(pending_candidates) == 0:
-                msg = "Building a new circuit to handle the new request."
-                logging.debug(msg)
-                self._buildNewCircuitForRequest(request)
 
-            self._pending_stream_pool.append(PendingStream(stream, d))
+        try:
+            c = random.choice(self._getOpenCandidates(request))
+            msg = "Assigning request to circuit {}.".format(c.circuit_id)
+            logging.debug(msg)
+            d.callback(c)
+        except IndexError:
+            if len(self._getPendingCandidates(request)) == 0:
+                msg = "Building a new circuit to handle request."
+                self._buildCircuit(request=request)
+            else:
+                msg = "A CircuitBuildTask can eventually handle request."
+
+            logging.debug(msg)
+            self._pending_stream_list.append(PendingStream(stream, d))
 
         return d
 
@@ -162,15 +145,13 @@ class CircuitManager(object):
         :returns: **bool** **True** if CircuitManager decides this circuit
             should be destroyed, **False** otherwise.
         '''
-        if circuit.ctype == CType.IPv4:
-            if self._totalIPv4Count() - 1 < self._min_IPv4_count:
-                return False
-            return True
+        # TODO: update for more kinds of circuits
+        if circuit.circuit_type == CircuitType.IPv4:
+            return self._totalIPv4Count()-1 > self._min_IPv4_count
+        else:
+            return self._totalIPv6Count()-1 > self._min_IPv6_count
 
-        if self._totalIPv6Count() - 1 < self._min_IPv6_count:
-            return False
-        return True
-
+    # TODO: fix docs to reflect CircuitBuildTask changes
     def circuitDestroyed(self, circuit):
         '''Circuits call circuitDestroyed() when they have cleaned up after
         themselves and closed.
@@ -203,39 +184,26 @@ class CircuitManager(object):
         :type circuit_id: int
         '''
         cid = circuit.circuit_id
-        if cid not in self._pending_circuit_map and cid not in self._open_circuit_map:
-            msg = "Circuit manager was notified that circuit {} was destroyed,"
-            msg += " but manager has no reference to this circuit."
-            logging.debug(msg)
-            return
-
         try:
-            del self._pending_circuit_map[cid]
-            msg = "Destroyed pending circuit {}.".format(cid)
+            del self._circuit_build_task_dict[cid]
+            msg = "Destroyed CircuitBuildTask {}.".format(cid)
             logging.debug(msg)
         except KeyError:
-            del self._open_circuit_map[cid]
-            msg = "Destroyed open circuit {}.".format(cid)
-            logging.debug(msg)
+            try:
+                del self._open_circuit_dict[cid]
+                msg = "Destroyed open circuit {}.".format(cid)
+                logging.debug(msg)
+            except KeyError:
+                logging.debug("Circuit manager was notified that circuit {} "
+                              "was destroyed, but manager has no reference to "
+                              "that circuit.".format(cid))
+                return
 
-        # assign any pending stream requests we can to open circuits
-        for circ in self._open_circuit_map.values():
-            self._assignPossiblePendingRequests(circ)
+        self._assignAllPossiblePendingRequests()
+        self._buildCircuitsForOrphanedPendingRequests()
+        self._replenishCircuits()
 
-        # build new circuits to handle any pending requests that can't
-        # currently be satisfied.
-        for pending_stream in self._pending_stream_pool:
-            request = pending_stream.stream.request
-            if len(self._getPendingCandidates(request)) == 0:
-                msg = "After destroying circuit {}, a pending request has no "
-                msg += "circuits that can handle it. Creating a new circuit."
-                logging.debug(msg.format(cid))
-                self._buildNewCircuitForRequest(request)
-
-        # if we've dropped below the default number of circuits that should
-        # be open, start building a new circuit
-        self._considerReplenishingCircuitPool()
-
+    # TODO: fix/update docs
     def circuitOpened(self, circuit):
         '''Circuits call circuitOpened() when they have successfully
         completed their build process and are ready to handle incoming
@@ -256,29 +224,19 @@ class CircuitManager(object):
         '''
         msg = "Circuit manager notified that circuit {} opened."
         logging.debug(msg.format(circuit.circuit_id))
-        # remove circuit from pending map
+
         try:
-            del self._pending_circuit_map[circuit.circuit_id]
+            del self._circuit_build_task_dict[circuit.circuit_id]
         except KeyError:
-            msg = "Circuit manager was notified circuit {} opened, but "
-            msg += "manager has no reference to this circuit."
-            logging.debug(msg.format(circuit.circuit_id))
+            logging.debug("Circuit manager has no reference to circuit {}."
+                          .format(circuit.circuit_id))
             return
 
-        # add to open map
-        self._open_circuit_map[circuit.circuit_id] = circuit
-        # assign new circuit any pending streams it can handle
-        self._assignPossiblePendingRequests(circuit)
+        self._open_circuit_dict[circuit.circuit_id] = circuit
+        self._assignPossiblePendingRequestsToCircuit(circuit)
+        self._notifyUserCircuitOpened()
 
-        # send a nice message letting the user know we opened a circuit if
-        # we haven't done so yet
-        if self._sent_open_message is False:
-            msg = "Circuit built successfully! oppy is ready to forward "
-            msg += "traffic :)"
-            logging.info(msg)
-            self._sent_open_message = True
-
-    def destroyAllCircuits(self):
+    def destroyAllCircuits(self, destroy_pending_streams=True):
         '''Destroy all open and pending circuits **and** remove all pending
         requests.
         '''
@@ -286,15 +244,50 @@ class CircuitManager(object):
         msg += "streams."
         logging.debug(msg)
 
-        self._pending_stream_pool = []
+        if destroy_pending_streams is True:
+            self._pending_stream_list = []
 
-        for circuit in self._open_circuit_map.values():
+        for circuit in self._open_circuit_dict.values():
             circuit.destroyCircuitFromManager()
 
-        for circuit in self._pending_circuit_map.values():
+        for circuit in self._circuit_build_task_dict.values():
             circuit.destroyCircuitFromManager()
 
-    def _assignPossiblePendingRequests(self, circuit):
+    def _buildCircuitsForOrphanedPendingRequests(self):
+        orphaned_streams = [s for s in self._pending_stream_list
+                            if len(self._getPendingCandidates(s.request)) == 0]
+        self._buildCircuitsForPendingStreams(orphaned_streams)
+
+    def _notifyUserCircuitOpened(self):
+        if self._sent_open_message is False:
+            msg = "Circuit built successfully! oppy is ready to forward "
+            msg += "traffic :)"
+            logging.info(msg)
+            self._sent_open_message = True
+
+    def _assignAllPossiblePendingRequests(self):
+        for circuit in self._open_circuit_dict.values():
+            self._assignPossiblePendingRequestsToCircuit(circuit)
+
+    def _buildCircuit(self, circuit_type=CircuitType.IPv4, request=None,
+                      autobuild=True):
+        _id = next(self._ctr)
+        task = CircuitBuildTask(self._connection_pool, self, _id,
+                                circuit_type=circuit_type, request=request,
+                                autobuild=autobuild)
+        self._circuit_build_task_dict[_id] = task
+
+    def _buildCircuits(self, count, circuit_type=CircuitType.IPv4,
+                       request=None, autobuild=True):
+        for _ in xrange(count):
+            self._buildCircuit(circuit_type=circuit_type, request=request,
+                               autobuild=autobuild)
+
+    def _buildCircuitsForPendingStreams(self, pending_streams):
+        for p in pending_streams:
+            self._buildCircuit(request=p.request)
+
+    def _assignPossiblePendingRequestsToCircuit(self, circuit):
         '''Check all pending requests and assign any requests to *circuit*
         that it can handle.
 
@@ -304,106 +297,62 @@ class CircuitManager(object):
         :param oppy.circuit.circuit.Circuit circuit: circuit to try assigning
             pending requests to
         '''
-        # register any pending streams that this circuit can handle
-        for pending_stream in self._pending_stream_pool[:]:
+        for pending_stream in self._pending_stream_list[:]:
             request = pending_stream.stream.request
-            # if this circuit can handle a request, callback with this circuit
             if circuit.canHandleRequest(request):
                 msg = "Assigning pending request to opened circuit {}."
                 logging.debug(msg.format(circuit.circuit_id))
                 pending_stream.deferred.callback(circuit)
-                self._pending_stream_pool.remove(pending_stream)
+                self._pending_stream_list.remove(pending_stream)
 
-    def _buildNewCircuit(self, path_constraints):
-        '''Build a new circuit, using a path that satisfies
-        *path_constraints*.
-
-        Assign an ID to the new circuit and add it to the pending circuit
-        map.
-
-        :param oppy.path.path.PathConstraints path_constraints: The path
-            constraints that the new circuit's path should satisfy.
-        '''
-        msg = "Building a new circuit with id {}."
-        logging.debug(msg.format(self._id_counter))
-        new_circuit = Circuit(self._id_counter, path_constraints)
-        self._pending_circuit_map[new_circuit.circuit_id] = new_circuit
-        self._id_counter += 1
-
-    def _buildNewCircuitForRequest(self, request):
-        '''Build a new circuit such that the circuit's exit relay claims to
-        allow the *request*.
-
-        :param oppy.util.exitrequest.ExitRequest request: The request that
-            the new circuit's exit relay should allow.
-        '''
-        # build a new circuit with default flags and ntor that has an exit
-        # node that can handle request
-        dest = request.addr + ':' + str(request.port)
-        entry = {'flags': DEFAULT_ENTRY_FLAGS, 'ntor': True}
-        middle = {'flags': DEFAULT_MIDDLE_FLAGS, 'ntor': True}
-
-        if request.is_ipv4:
-            exit = {'flags': DEFAULT_EXIT_FLAGS, 'ntor': True,
-                    'exit_to_IP_and_port': dest}
-        else:
-            exit = {'flags': DEFAULT_EXIT_FLAGS, 'ntor': True,
-                    'exit_IPv6': True, 'exit_to_IP_and_port': dest}
-
-        constraints = PathConstraints(entry=entry, middle=middle, exit=exit)
-        self._buildNewCircuit(constraints)
-
-    def _considerReplenishingCircuitPool(self):
+    def _replenishCircuits(self):
         '''Decide whether or not to build a new circuit - called when a
         circuit is destroyed.
 
         Check CircuitManager's basic requirements for open/pending circuits.
         If they are not satisfied, build a new circuit.
         '''
-        # check if we're below the threshold of either IPv4 or IPv6 circuits
-        # we should have open or pending. if so, build a new circuit of
-        # the required type
         if self._totalIPv4Count() < self._min_IPv4_count:
             msg = "Replenishing circuit pool with a new IPv4 circuit."
             logging.debug(msg)
-            self._buildNewCircuit(DEFAULT_IPv4_CONSTRAINTS)
+            self._buildCircuit(circuit_type=CircuitType.IPv4)
 
         if self._totalIPv6Count() < self._min_IPv6_count:
             msg = "Replenishing circuit pool with a new IPv6 circuit."
             logging.debug(msg)
-            self._buildNewCircuit(DEFAULT_IPv6_CONSTRAINTS)
+            self._buildCircuit(circuit_type=CircuitType.IPv6)
 
     def _openIPv4Count(self):
         '''Return the number of open IPv4 circuits.
 
         :returns: **int** number of open IPv4 circuits
         '''
-        return len([i for i in self._open_circuit_map.values()
-                    if i.ctype == CType.IPv4])
+        return len([i for i in self._open_circuit_dict.values()
+                    if i.circuit_type == CircuitType.IPv4])
 
     def _openIPv6Count(self):
         '''Return the number of open IPv6 circuits.
 
         :returns: **int** number of open IPv6 circuits.
         '''
-        return len([i for i in self._open_circuit_map.values()
-                    if i.ctype == CType.IPv6])
+        return len([i for i in self._open_circuit_dict.values()
+                    if i.circuit_type == CircuitType.IPv6])
 
     def _pendingIPv4Count(self):
         '''Return the number of pending IPv4 circuits.
 
         :returns: **int** number of pending IPv4 circuits.
         '''
-        return len([i for i in self._pending_circuit_map.values()
-                   if i.ctype == CType.IPv4])
+        return len([i for i in self._circuit_build_task_dict.values()
+                   if i.circuit_type == CircuitType.IPv4])
 
     def _pendingIPv6Count(self):
         '''Return the number of pending IPv6 circuits.
 
         :returns: **int** number of pending IPv6 circuits
         '''
-        return len([i for i in self._pending_circuit_map.values()
-                    if i.ctype == CType.IPv6])
+        return len([i for i in self._circuit_build_task_dict.values()
+                    if i.circuit_type == CircuitType.IPv6])
 
     def _totalIPv4Count(self):
         '''Return the total (open + pending) IPv4 circuits.
@@ -426,7 +375,7 @@ class CircuitManager(object):
         :returns: **list, oppy.circuit.circuit.Circuit** open circuits whose
             exit relay can handle the request
         '''
-        return [i for i in self._open_circuit_map.values()
+        return [i for i in self._open_circuit_dict.values()
                 if i.canHandleRequest(request)]
 
     def _getPendingCandidates(self, request):
@@ -441,5 +390,5 @@ class CircuitManager(object):
         :returns: **list, oppy.circuit.circuit.Circuit** pending circuits
             that can (probably) handle the request
         '''
-        return [i for i in self._pending_circuit_map.values()
+        return [i for i in self._circuit_build_task_dict.values()
                 if i.canHandleRequest(request)]

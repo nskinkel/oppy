@@ -65,14 +65,20 @@ logging.info('oppy will listen for connections on port {}.'.format(socks_port))
 logging.info('But we need to build some circuits first...')
 logging.info('Retrieving network status information.')
 
+import oppy.shared
+
+from oppy.connection.connectionpool import ConnectionPool
+connection_pool = ConnectionPool()
+
+from oppy.circuit.circuitmanager import CircuitManager
+circuit_manager = CircuitManager(connection_pool)
+
 # catch CTRL-C to shutdown properly
 from oppy.util.tools import shutdown
-reactor.addSystemEventTrigger('before', 'shutdown', shutdown)
+reactor.addSystemEventTrigger('before', 'shutdown', shutdown, circuit_manager)
 
-import oppy.shared
 from oppy.socks.socks import OppySOCKSProtocolFactory
-
 server_endpoint = TCP4ServerEndpoint(reactor, socks_port)
-server_endpoint.listen(OppySOCKSProtocolFactory())
+server_endpoint.listen(OppySOCKSProtocolFactory(circuit_manager))
 
 reactor.run()

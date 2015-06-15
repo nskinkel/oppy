@@ -18,7 +18,7 @@ class ExitRequest(object):
         :param str host: hostname to connect to
         '''
         # either address or host must be set, but not both
-        assert addr or host and not (addr and host)
+        assert bool(addr) ^ bool(host)
 
         self.port = struct.unpack("!H", port)[0]
         self.addr = addr

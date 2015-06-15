@@ -111,7 +111,8 @@ def makePayloadWithDigest(payload, digest=EMPTY_DIGEST):
     return payload[:DIGEST_START] + digest + payload[DIGEST_END:]
 
 
-def encryptCellToTarget(cell, crypt_path, target=2, early=False):
+# TODO: fix documentation
+def encryptCell(cell, crypt_path, early=False):
     '''Encrypt *cell* to the *target* relay in *crypt_path* and update
     the appropriate forward digest.
 
@@ -123,17 +124,16 @@ def encryptCellToTarget(cell, crypt_path, target=2, early=False):
         RELAY cmd
     :returns: **oppy.cell.fixedlen.EncryptedCell**
     '''
-    assert target >= 0 and target < len(crypt_path)
     assert cell.rheader.digest == EMPTY_DIGEST
 
     # 1) update f_digest with cell payload bytes
-    crypt_path[target].forward_digest.update(cell.getPayload())
+    crypt_path[-1].forward_digest.update(cell.getPayload())
     # 2) insert first four bytes into new digest position
-    cell.rheader.digest = crypt_path[target].forward_digest.digest()[:4]
+    cell.rheader.digest = crypt_path[-1].forward_digest.digest()[:4]
     # 3) encrypt payload
     payload = cell.getPayload()
-    for node in xrange(target + 1):
-        payload = crypt_path[node].forward_cipher.encrypt(payload)
+    for node in reversed(crypt_path):
+        payload = node.forward_cipher.encrypt(payload)
     # 4) return encrypted relay cell with new payload
     return EncryptedCell.make(cell.header.circ_id, payload, early=early)
 
@@ -165,7 +165,9 @@ def cellRecognized(payload, relay_crypto):
     return test_digest.digest()[:4] == digest
 
 
-def decryptCellUntilRecognized(cell, crypt_path, origin=2):
+# TODO: fix documentation
+# XXX why does this have an 'origin' param? i think we can scrap this
+def decryptCell(cell, crypt_path):
     '''Decrypt *cell* until it is recognized or we've tried all RelayCrypto's
     in *crypt_path*.
 
@@ -178,17 +180,16 @@ def decryptCellUntilRecognized(cell, crypt_path, origin=2):
     :param int origin: the originating hop we think this cell came from
     :returns: the concrete RelayCell type of this decrypted cell
     '''
-    assert 0 <= origin <= 2, 'We can only handle 3-hop paths'
-
+    origin = 0
     recognized = False
     payload = cell.getPayload()
-    for node in xrange(len(crypt_path)):
-        relay_crypto = crypt_path[node]
-        payload = relay_crypto.backward_cipher.decrypt(payload)
-        if cellRecognized(payload, relay_crypto):
+
+    for node in crypt_path:
+        payload = node.backward_cipher.decrypt(payload)
+        if cellRecognized(payload, node):
             recognized = True
-            origin = node
             break
+        origin += 1
 
     if recognized:
         updated_payload = makePayloadWithDigest(payload)

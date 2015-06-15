@@ -3,6 +3,7 @@
 
 import base64
 import hashlib
+import itertools
 
 
 def signingKeyToSHA1(signing_key):
@@ -27,10 +28,18 @@ def enum(**enums):
     return type('Enum', (), enums)
 
 
-def shutdown():
+# TODO: fix docs
+def shutdown(circuit_manager):
     '''Destroy all connections, circuits, and streams.
 
     Called right before a shutdown event (e.g. CTRL-C).
     '''
-    from oppy.shared import circuit_manager
     circuit_manager.destroyAllCircuits()
+
+
+def ctr(upper):
+    """Return a generator for a rollover counter.
+
+    :param int upper: Upper bound of counter.
+    """
+    return (i for _ in itertools.count() for i in range(1, upper))

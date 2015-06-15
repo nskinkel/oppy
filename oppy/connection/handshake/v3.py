@@ -106,7 +106,7 @@ class V3FSM(object):
 
         return supported
 
-    def recvCell(self, cell):
+    def recv(self, cell):
         '''Receive and incoming cell and hand off to a processing function
         based on the current fsm state.
 
