@@ -18,6 +18,7 @@ from twisted.internet.ssl import ClientContextFactory
 from OpenSSL import SSL
 
 from oppy.connection.connection import Connection
+from oppy.connection.connectionbuildtask import ConnectionBuildTask
 from oppy.connection.definitions import V3_CIPHER_STRING
 
 
@@ -33,13 +34,14 @@ class TLSClientContextFactory(ClientContextFactory):
         return context
 
 
-class ConnectionPool(object):
+# TODO: when things are shut down from CTRL-C, it's ugly and should be fixed
+class ConnectionManager(object):
     '''A pool of TLS connections to entry nodes.'''
 
     def __init__(self):
-        logging.debug('Connection pool created.')
-        self._connection_map = {}
-        self._pending_map = {}
+        logging.debug('Connection manager created.')
+        self._connection_dict = {}
+        self._pending_request_dict = {}
 
     # TODO: fix docs
     def getConnection(self, relay):
@@ -76,30 +78,31 @@ class ConnectionPool(object):
         from twisted.internet import reactor
         
         d = defer.Deferred()
-        # case 1
-        if relay.fingerprint in self._connection_map:
-            d.callback(self._connection_map[relay.fingerprint])
-        # case 2
-        elif relay.fingerprint in self._pending_map:
-            self._pending_map[relay.fingerprint].append(d)
-        # case 3
+        
+        if relay.fingerprint in self._connection_dict:
+            d.callback(self._connection_dict[relay.fingerprint])
+        elif relay.fingerprint in self._pending_request_dict:
+            self._pending_request_dict[relay.fingerprint].append(d)
         else:
-            connection_defer = endpoints.connectProtocol(
+            try:
+                f = endpoints.connectProtocol(
                         endpoints.SSL4ClientEndpoint(reactor, relay.address,
                                                      relay.or_port,
                                                      TLSClientContextFactory()),
-                        Connection(self, relay)
-            )
-            connection_defer.addCallback(self._connectionSucceeded,
-                                         relay.fingerprint)
-            connection_defer.addErrback(self._connectionFailed,
-                                        relay.fingerprint)
-            self._pending_map[relay.fingerprint] = []
-            self._pending_map[relay.fingerprint].append(d)
+                        ConnectionBuildTask(self, relay))
+                f.addErrback(self._initialConnectionFailed, relay.fingerprint)
+                self._pending_request_dict[relay.fingerprint] = [d]
+            except Exception as e:
+                self._initialConnectionFailed(e, relay.fingerprint)
 
         return d
 
-    def _connectionSucceeded(self, result, fingerprint):
+    # called when the initial connection fails
+    # TODO: track these and timeout if we get too many failures
+    def _initialConnectionFailed(self, reason, fingerprint):
+        self.connectionTaskFailed(None, reason, fingerprint)
+
+    def connectionTaskSucceeded(self, connection_task):
         '''For every pending request for this connection, callback the request
         deferred with this open connection, then remove this connection
         from the pending map and add to the connection map.
@@ -111,12 +114,29 @@ class ConnectionPool(object):
             opened connection
         :param str fingerprint: fingerprint of relay we have connected to
         '''
-        for request in self._pending_map[fingerprint]:
-            request.callback(result)
-        del self._pending_map[fingerprint]
-        self._connection_map[fingerprint] = result
+        fprint = connection_task.relay.fingerprint
 
-    def _connectionFailed(self, reason, fingerprint):
+        if fprint not in self._pending_request_dict:
+            msg = ("ConnectionManager notified that a connection to {} "
+                   "was made successfully, but ConnectionManager has no "
+                   "reference to this connection. Dropping.".format(fprint))
+            logging.debug(msg)
+            return
+
+        connection = Connection(self, connection_task)
+        self._connection_dict[fprint] = connection
+        # We need to re-assign the transport from the ConnectionBuildTask
+        # to the new Connection. This is fragile and should be updated after
+        # Twisted bug #3204 is fixed: http://twistedmatrix.com/trac/ticket/3204
+        connection.transport = connection_task.transport
+        connection_task.transport = None
+        connection.transport.wrappedProtocol = connection
+
+        for request in self._pending_request_dict[fprint]:
+            request.callback(connection)
+        del self._pending_request_dict[fprint]
+
+    def connectionTaskFailed(self, connection_task, reason, fprint=None):
         '''For every pending request for this connection, errback the request
         deferred. Remove this connection from the pending map.
 
@@ -127,22 +147,36 @@ class ConnectionPool(object):
         :param str fingerprint: fingerprint of the relay this connection
             failed to
         '''
-        msg = "Connection to {} failed: {}.".format(fingerprint, reason)
-        logging.debug(msg)
-        for request in self._pending_map[fingerprint]:
-            request.errback(reason)
-        del self._pending_map[fingerprint]
+        # XXX update what args we're calling the errback here with
+        fprint = fprint or connection_task.relay.fingerprint
+        try:
+            for request in self._pending_request_dict[fprint]:
+                request.errback(reason)
+            del self._pending_request_dict[fprint]
+        except KeyError:
+            msg = ("ConnectionManager notified that a connection to {} "
+                   "failed, but ConnectionManager has no reference to this "
+                   "connection. Dropping.".format(fprint))
+            logging.debug(msg)
 
-    def removeConnection(self, fingerprint):
+    def removeConnection(self, connection):
         '''Remove the connection to relay with *fingerprint* from the
         connection pool.
 
         :param str fingerprint: fingerprint of connection to remove
         '''
-        if fingerprint in self._connection_map:
-            del self._connection_map[fingerprint]
+        fprint = connection.relay.fingerprint
+        try:
+            del self._connection_dict[connection.relay.fingerprint]
+            logging.debug("ConnectionManager removed a connection to {}"
+                          .format(fprint))
+        except KeyError:
+            logging.debug("ConnectionManager received a request to remove a "
+                          "connection to {}, but CircuitManager has no "
+                          "reference to that connection."
+                          .format(fprint))
 
-    def shouldDestroyConnection(self, fingerprint):
+    def shouldDestroyConnection(self, connection):
         '''Return **True** if ConnectionPool thinks we should destroy the
         TLS connection to relay with *fingerprint*.
 

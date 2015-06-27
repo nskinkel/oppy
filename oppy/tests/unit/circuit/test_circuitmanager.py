@@ -16,7 +16,8 @@ ID = 0
 
 class CircuitManagerTest(unittest.TestCase):
 
-    @mock.patch('oppy.connection.connectionpool.ConnectionPool', autospec=True)
+    @mock.patch('oppy.connection.connectionmanager.ConnectionManager',
+                autospec=True)
     def setUp(self, cp,):
         self.cp = cp
         self.cm = CircuitManager(cp, autobuild=False)

@@ -258,7 +258,8 @@ class Circuit(object):
         msg = "Circuit {} destroyed by circuit manager."
         logging.debug(msg.format(self.circuit_id))
         self._sendDestroyCell()
-        self._closeCircuit(notify_manager=False)
+        self._closeAllStreams()
+        self._connection.removeCircuit(self)
 
     def destroyCircuitFromConnection(self):
         '''Called when a connection closes this circuit (usually because
@@ -635,7 +636,7 @@ class Circuit(object):
                    "{}.".format(e, self.circuit_id))
             logging.debug(msg)
 
-    def _closeCircuit(self, notify_manager=True):
+    def _closeCircuit(self):
         '''Close this circuit.
 
         Close all associated streams, notify the circuit manager this
@@ -643,6 +644,5 @@ class Circuit(object):
         circuit has closed.
         '''
         self._closeAllStreams()
-        if notify_manager is True:
-            self._circuit_manager.circuitDestroyed(self)
+        self._circuit_manager.circuitDestroyed(self)
         self._connection.removeCircuit(self)

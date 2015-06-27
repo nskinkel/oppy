@@ -17,7 +17,7 @@ ID = 0
 class CircuitBuildTaskTest(unittest.TestCase):
 
     @mock.patch('oppy.circuit.circuitbuildtask.logging', autospec=True)
-    @mock.patch('oppy.connection.connectionpool.ConnectionPool', autospec=True)
+    @mock.patch('oppy.connection.connectionmanager.ConnectionManager', autospec=True)
     @mock.patch('oppy.circuit.circuitmanager.CircuitManager', autospec=True)
     def setUp(self, cm, cp, ml):
         self.cm = cm
@@ -289,8 +289,8 @@ class CircuitBuildTaskTest(unittest.TestCase):
         d = defer.Deferred()
         mock_getPath.return_value = d
 
-        self.circuit._connection_pool.getConnection = mock.Mock()
-        self.circuit._connection_pool.getConnection.side_effect = Exception
+        self.circuit._connection_manager.getConnection = mock.Mock()
+        self.circuit._connection_manager.getConnection.side_effect = Exception
 
         self.circuit.build()
         d.callback(mock_path)
@@ -462,7 +462,7 @@ class CircuitBuildTaskTest(unittest.TestCase):
     def test_getConnection(self, conn):
         node = mock.Mock()
         d = defer.Deferred()
-        self.circuit._connection_pool.getConnection.return_value = d
+        self.circuit._connection_manager.getConnection.return_value = d
         ret_val = self.circuit._getConnection(node)
 
         d.callback(conn)

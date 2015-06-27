@@ -257,12 +257,14 @@ class CircuitTest(unittest.TestCase):
 
     def test_destroyCircuitFromManager(self):
         self.circuit._sendDestroyCell = mock.Mock()
-        self.circuit._closeCircuit = mock.Mock()
+        self.circuit._closeAllStreams = mock.Mock()
+        self.circuit._connection.removeCircuit = mock.Mock()
 
         self.circuit.destroyCircuitFromManager()
 
         self.assertEqual(self.circuit._sendDestroyCell.call_count, 1)
-        self.assertEqual(self.circuit._closeCircuit.call_count, 1)
+        self.assertEqual(self.circuit._closeAllStreams.call_count, 1)
+        self.assertEqual(self.circuit._connection.removeCircuit.call_count, 1)
 
     # TODO: test
     def test_destroyCircuitFromManager_conn_send_fail(self):

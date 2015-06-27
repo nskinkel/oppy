@@ -74,6 +74,7 @@ class Cell(object):
             msg = "Unknown cell cmd: {}.".format(cmd)
             raise UnknownCellCommand(msg)
 
+    # TODO: document exceptions that can be raised
     @staticmethod
     def parse(data, link_version=3, encrypted=False):
         '''Return an instance of a cell constructed from the str data.
@@ -100,13 +101,12 @@ class Cell(object):
             msg = "link_version must be leq 4, but found {} instead"
             raise ValueError(msg.format(link_version))
 
-        # Handle the case where the circuit id represented as two octets and
-        # the case where it is four octets:
         fmt = "!HB" if link_version <= 3 else "!IB"
         header_len = struct.calcsize(fmt)
 
         if len(data) < header_len:
             raise NotEnoughBytes()
+
         circ_id, cmd = struct.unpack(fmt, data[:header_len])
 
         if cmd not in DEF.CELL_CMD_IDS:

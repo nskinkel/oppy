@@ -67,11 +67,11 @@ logging.info('Retrieving network status information.')
 
 import oppy.shared
 
-from oppy.connection.connectionpool import ConnectionPool
-connection_pool = ConnectionPool()
+from oppy.connection.connectionmanager import ConnectionManager
+connection_manager = ConnectionManager()
 
 from oppy.circuit.circuitmanager import CircuitManager
-circuit_manager = CircuitManager(connection_pool)
+circuit_manager = CircuitManager(connection_manager)
 
 # catch CTRL-C to shutdown properly
 from oppy.util.tools import shutdown

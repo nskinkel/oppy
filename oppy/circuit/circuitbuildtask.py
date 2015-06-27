@@ -52,9 +52,9 @@ def getConstraints(circuit_type=None, request=None):
 #               - docs
 class CircuitBuildTask(object):
 
-    def __init__(self, connection_pool, circuit_manager, _id,
+    def __init__(self, connection_manager, circuit_manager, _id,
                  circuit_type=None, request=None, autobuild=True):
-        self._connection_pool = connection_pool
+        self._connection_manager = connection_manager
         self._circuit_manager = circuit_manager
         self.circuit_id = _id
         self.circuit_type = circuit_type
@@ -141,7 +141,7 @@ class CircuitBuildTask(object):
         return d
 
     def _getConnection(self, node):
-        d = self._connection_pool.getConnection(node)
+        d = self._connection_manager.getConnection(node)
         self._current_task = d
         def addCirc(res):
             self._conn = res

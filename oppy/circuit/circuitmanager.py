@@ -53,9 +53,9 @@ PendingStream = namedtuple("PendingStream", (
 class CircuitManager(object):
     '''Manage a pool of circuits.'''
 
-    def __init__(self, connection_pool, autobuild=True):
+    def __init__(self, connection_manager, autobuild=True):
         logging.debug("Creating circuit manager.")
-        self._connection_pool = connection_pool
+        self._connection_manager = connection_manager
         self._ctr = ctr(MAX_STREAMS_V3)
         self._open_circuit_dict = {}
         self._circuit_build_task_dict = {}
@@ -272,7 +272,7 @@ class CircuitManager(object):
     def _buildCircuit(self, circuit_type=CircuitType.IPv4, request=None,
                       autobuild=True):
         _id = next(self._ctr)
-        task = CircuitBuildTask(self._connection_pool, self, _id,
+        task = CircuitBuildTask(self._connection_manager, self, _id,
                                 circuit_type=circuit_type, request=request,
                                 autobuild=autobuild)
         self._circuit_build_task_dict[_id] = task
