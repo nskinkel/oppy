@@ -71,6 +71,7 @@ class NetStatus(object):
         # chain of requests for descriptors that will get called back when we
         # get the first set of network docs. after that, this is no longer used
         self._descriptor_request_stack = defer.Deferred()
+        self._consensus_request_stack = defer.Deferred()
         # endpoints is a list of V2Dir directory caches we can choose from to
         # try getting network docs. upon instantiation, we check if there is
         # a "cached-consensus" file to pull them from, otherwise endpoints is
@@ -103,6 +104,18 @@ class NetStatus(object):
 
         return d
 
+    def getConsensus(self):
+        d = defer.Deferred()
+        if self._descriptors is not None:
+            d.callback(self._consensus)
+        else:
+            def serveConsensus(result):
+                d.callback(result)
+                return result
+            self._consensus_request_stack.addCallback(serveConsensus)
+
+        return d
+
     @defer.inlineCallbacks
     def _getDocuments(self):
         '''Download and parse network status documents.
@@ -123,6 +136,7 @@ class NetStatus(object):
         # if this is the first set of documents we've downloaded, start the
         # descriptor_request_stack callback chain to satisfy requests for
         if self._initial is True:
+            self._consensus_request_stack.callback(self._consensus)
             self._descriptor_request_stack.callback(self._descriptors)
             self._initial = False
         # schedule the next download time

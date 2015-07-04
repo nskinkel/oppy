@@ -623,14 +623,19 @@ class Circuit(object):
     def _encryptAndSendCell(self, cell):
         try:
             enc = crypto.encryptCell(cell, self._crypt_path)
+        # TODO: an exception here probably means the circuit needs to be
+        #       torn down immediately
         except Exception as e:
             msg = ("Error: {}. Failed to encrypt a {} cell on circuit {}. "
                    "Refusing to send unencrypted cell. Dropping the cell."
                    .format(e, type(cell), self.circuit_id))
             logging.warning(msg)
+            return
 
         try:
             self._connection.send(enc)
+        # TODO: exception here probably means the circuit needs to be torn down
+        #       immediately
         except Exception as e:
             msg = ("Error: {}. Failed to send an encrypted cell on circuit "
                    "{}.".format(e, self.circuit_id))

@@ -38,6 +38,7 @@ from oppy.circuit.definitions import (
     DEFAULT_OPEN_IPv6,
     MAX_STREAMS_V3,
 )
+from oppy.history.guards import GuardManager
 from oppy.util.tools import ctr
 
 
@@ -48,13 +49,17 @@ PendingStream = namedtuple("PendingStream", (
 
 
 # Major TODO's:
+#   - documentation
+#   - more testing
 
 
 class CircuitManager(object):
     '''Manage a pool of circuits.'''
 
-    def __init__(self, connection_manager, autobuild=True):
+    def __init__(self, connection_manager, netstatus, autobuild=True):
         logging.debug("Creating circuit manager.")
+        self._netstatus = netstatus
+        self._guard_manager = GuardManager(netstatus)
         self._connection_manager = connection_manager
         self._ctr = ctr(MAX_STREAMS_V3)
         self._open_circuit_dict = {}
@@ -272,7 +277,8 @@ class CircuitManager(object):
     def _buildCircuit(self, circuit_type=CircuitType.IPv4, request=None,
                       autobuild=True):
         _id = next(self._ctr)
-        task = CircuitBuildTask(self._connection_manager, self, _id,
+        task = CircuitBuildTask(self._connection_manager, self, self._netstatus,
+                                self._guard_manager, _id,
                                 circuit_type=circuit_type, request=request,
                                 autobuild=autobuild)
         self._circuit_build_task_dict[_id] = task

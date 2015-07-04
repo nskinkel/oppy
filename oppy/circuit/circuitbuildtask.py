@@ -15,33 +15,7 @@ from oppy.cell.relay import RelayExtend2Cell, RelayExtended2Cell
 from oppy.cell.util import LinkSpecifier
 from oppy.circuit.circuit import CircuitType, Circuit
 from oppy.crypto.ntorhandshake import NTorHandshake
-from oppy.path.defaults import (
-    DEFAULT_ENTRY_FLAGS,
-    DEFAULT_MIDDLE_FLAGS,
-    DEFAULT_EXIT_FLAGS,
-)
-
-# TODO: remove this horribleness when we get proper path selection
-def getConstraints(circuit_type=None, request=None):
-    entry = {'ntor': True, 'flags': DEFAULT_ENTRY_FLAGS}
-    middle = {'ntor': True, 'flags': DEFAULT_MIDDLE_FLAGS}
-
-    if request is None:
-        exit = {'ntor': True, 'flags': DEFAULT_EXIT_FLAGS}
-    elif request.is_ipv4:
-        exit = {'flags': DEFAULT_EXIT_FLAGS, 'ntor': True,
-                'exit_to_IP_and_port': request.addr + ":" +
-                                       str(request.port)}
-    elif request.is_ipv6 or circuit_type == CircuitType.IPv6:
-        exit = {'flags': DEFAULT_EXIT_FLAGS, 'ntor': True, 'exit_IPv6': True}
-        if request.is_ipv6 is not None:
-            exit['exit_to_IP_and_port'] = request.addr + ":" + str(request.port)
-    else:
-        # host request or generic IPv4 circuits can just
-        # use the default flags
-        exit = {'ntor': True, 'flags': DEFAULT_EXIT_FLAGS}
-
-    return path.PathConstraints(entry=entry, middle=middle, exit=exit)
+from oppy.path.path import getPath
 
 
 # Major TODO's:
@@ -50,12 +24,17 @@ def getConstraints(circuit_type=None, request=None):
 #               - catch/handle specific getPath exceptions
 #               - handle cells with unexpected origins
 #               - docs
+#               - figure out where alreadyCalledError is coming from when
+#                 building a path fails
 class CircuitBuildTask(object):
 
-    def __init__(self, connection_manager, circuit_manager, _id,
-                 circuit_type=None, request=None, autobuild=True):
+    def __init__(self, connection_manager, circuit_manager, netstatus,
+                 guard_manager, _id, circuit_type=None, request=None,
+                 autobuild=True):
         self._connection_manager = connection_manager
         self._circuit_manager = circuit_manager
+        self._netstatus = netstatus
+        self._guard_manager = guard_manager
         self.circuit_id = _id
         self.circuit_type = circuit_type
         self.request = request
@@ -64,7 +43,6 @@ class CircuitBuildTask(object):
         self._crypt_path = []
         self._read_queue = defer.DeferredQueue()
         self._autobuild = autobuild
-        self._path_constraints = None
         self._tasks = None
         self._building = False
         self._current_task = None
@@ -77,10 +55,10 @@ class CircuitBuildTask(object):
             msg = "Circuit {} already started build process."
             raise RuntimeError(msg.format(self.circuit_id))
 
-        self._path_constraints = getConstraints(self.circuit_type,
-                                                self.request)
         try:
-            self._tasks = path.getPath(self._path_constraints)
+            # TODO: update for stable/fast flags based on circuit_type
+            self._tasks = path.getPath(self._netstatus, self._guard_manager,
+                                       exit_request=self.request)
         except Exception as e:
             self._buildFailed(e)
             return

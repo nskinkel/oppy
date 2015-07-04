@@ -2,5 +2,9 @@
 # See LICENSE for licensing information
 
 
-class UnknownPathConstraint(Exception):
+class NoUsableGuardsException(Exception):
+    pass
+
+
+class PathSelectionFailedException(Exception):
     pass

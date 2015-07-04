@@ -71,7 +71,7 @@ from oppy.connection.connectionmanager import ConnectionManager
 connection_manager = ConnectionManager()
 
 from oppy.circuit.circuitmanager import CircuitManager
-circuit_manager = CircuitManager(connection_manager)
+circuit_manager = CircuitManager(connection_manager, oppy.shared.net_status)
 
 # catch CTRL-C to shutdown properly
 from oppy.util.tools import shutdown

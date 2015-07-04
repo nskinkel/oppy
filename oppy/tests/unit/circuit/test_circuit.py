@@ -827,7 +827,7 @@ class CircuitTest(unittest.TestCase):
 
         mock_encrypt.assert_called_once_with(cell, [])
         self.assertEqual(self.circuit._connection.send.call_count, 0)
-        self.assertTrue(mock_logging.debug.called)
+        self.assertTrue(mock_logging.warning.called)
 
     # TODO: test
     def test_encryptAndSendCell_send_fail(self):

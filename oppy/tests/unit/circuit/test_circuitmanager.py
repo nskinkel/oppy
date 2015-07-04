@@ -18,9 +18,11 @@ class CircuitManagerTest(unittest.TestCase):
 
     @mock.patch('oppy.connection.connectionmanager.ConnectionManager',
                 autospec=True)
-    def setUp(self, cp,):
+    @mock.patch('oppy.netstatus.netstatus.NetStatus', autospec=True)
+    def setUp(self, ns, cp,):
+        self.ns = ns
         self.cp = cp
-        self.cm = CircuitManager(cp, autobuild=False)
+        self.cm = CircuitManager(cp, ns, autobuild=False)
     
     @mock.patch('oppy.stream.stream.Stream', autospec=True)
     def test_getOpenCircuit_open_circuit(self, mock_stream):

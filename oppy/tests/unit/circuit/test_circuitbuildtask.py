@@ -19,10 +19,15 @@ class CircuitBuildTaskTest(unittest.TestCase):
     @mock.patch('oppy.circuit.circuitbuildtask.logging', autospec=True)
     @mock.patch('oppy.connection.connectionmanager.ConnectionManager', autospec=True)
     @mock.patch('oppy.circuit.circuitmanager.CircuitManager', autospec=True)
-    def setUp(self, cm, cp, ml):
+    @mock.patch('oppy.netstatus.netstatus.NetStatus', autospec=True)
+    @mock.patch('oppy.history.guards.GuardManager', autospec=True)
+    def setUp(self, gm, ns, cm, cp, ml):
+        self.gm = gm
+        self.ns = ns
         self.cm = cm
         self.cp = cp
-        self.circuit = CircuitBuildTask(self.cp, self.cm, ID,
+        self.circuit = CircuitBuildTask(self.cp, self.cm, self.ns, self.gm,
+                                        ID,
                                         CircuitType.IPv4,
                                         autobuild=False)
         self.mock_logging = ml
@@ -258,11 +263,9 @@ class CircuitBuildTaskTest(unittest.TestCase):
         self.assertEqual(self.circuit._buildSucceeded.call_count, 1)
         self.assertEqual(self.circuit._buildFailed.call_count, 0)
 
-    @mock.patch('oppy.circuit.circuitbuildtask.getConstraints', autospec=True)
     @mock.patch('oppy.path.path.Path', autospec=True)
     @mock.patch('oppy.path.path.getPath')
-    def test_build_self_getConnection_fail(self, mock_getPath, mock_path,
-                                           mock_constraints):
+    def test_build_self_getConnection_fail(self, mock_getPath, mock_path):
         self.circuit._buildSucceeded = mock.Mock()
         self.circuit._buildFailed = mock.Mock()
         mock_path.entry = mock.Mock()
