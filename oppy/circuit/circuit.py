@@ -114,7 +114,7 @@ class Circuit(object):
         if len(self._streams) == self._max_streams:
             return False
 
-        return self._path.exit.descriptor.exit_policy.can_exit_to(port=request.port)
+        return self._path.exit.microdescriptor.exit_policy.can_exit_to(port=request.port)
 
     def send(self, data, stream):
         '''Put a tuple of (data, stream_id) on this circuit's write_queue.

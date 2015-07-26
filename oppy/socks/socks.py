@@ -35,6 +35,34 @@ from oppy.util.exitrequest import ExitRequest
 from oppy.util.tools import enum
 
 
+# Major TODO's:
+#   - catch possible exceptions raised from ExitRequest construction
+#   - make sure ExitRequest catches invalid ports etc.
+
+class MalformedSOCKSHandshake(Exception):
+    pass
+
+
+class MalformedSOCKSRequest(Exception):
+    pass
+
+
+class NoSupportedMethods(Exception):
+    pass
+
+
+class UnsupportedAddressType(Exception):
+    pass
+
+
+class UnsupportedCommand(Exception):
+    pass
+
+
+class UnsupportedVersion(Exception):
+    pass
+
+
 VER = "\x05"
 RSV = "\x00"
 
@@ -66,6 +94,18 @@ ADDRESS_TYPE_NOT_SUPPORTED  = "\x08"
 IPv4        = "\x01"
 DOMAIN_NAME = "\x03"
 IPv6        = "\x04"
+
+
+# used for parsing incoming SOCKS data
+VER_LEN = 1
+NMETHODS_LEN = 1
+CMD_LEN = 1
+RSV_LEN = 1
+ADDR_TYPE_LEN = 1
+IPv4_LEN = 4
+IPv6_LEN = 16
+PORT_LEN = 2
+REQUEST_HEADER_LEN = VER_LEN+CMD_LEN+RSV_LEN+ADDR_TYPE_LEN
 
 
 State = enum(
@@ -128,27 +168,16 @@ class OppySOCKSProtocol(Protocol):
 
         :param str data: handshake data
         '''
-        VER_LEN = 1
-        NMETHODS_LEN = 1
-        offset = 0
 
-        version = data[: VER_LEN]
-        offset += VER_LEN
-        nmethods = data[offset : offset + NMETHODS_LEN]
-        offset += NMETHODS_LEN
-
-        if version != VER:
-            logging.error("Unsupported SOCKS version: {}.".format(version))
+        try:
+            methods = _parseHandshake(data)
+        except (MalformedSOCKSHandshake,
+                NoSupportedMethods,
+                UnsupportedVersion) as e:
+            logging.error(e)
+            # TODO: do we need to write a response?
             self.transport.loseConnection()
             return
-
-        if nmethods == "\x00":
-            logging.error("No SOCKS methods received.")
-            self.transport.loseConnection()
-            return
-
-        _nmethods = struct.unpack("!B", nmethods)[0]
-        methods = data[offset : offset + _nmethods]
 
         if NO_AUTH_REQUIRED not in methods:
             logging.error("SOCKS client does not support NO_AUTH method.")
@@ -169,67 +198,31 @@ class OppySOCKSProtocol(Protocol):
 
         :param str data: incoming request data to process
         '''
-        VER_LEN = 1
-        CMD_LEN = 1
-        RSV_LEN = 1
-        ADDR_TYPE_LEN = 1
-        offset = 0
-
-        ver = data[: VER_LEN]
-        offset += VER_LEN
-        cmd = data[offset : offset + CMD_LEN]
-        offset += CMD_LEN
-        rsv = data[offset : offset + RSV_LEN]
-        offset += RSV_LEN
-        addr_type = data[offset : offset + ADDR_TYPE_LEN]
-        offset += ADDR_TYPE_LEN
-
-        if ver != VER:
-            logging.error("Unsupported SOCKS version: {}.".format(ver))
-            self._sendReply(SOCKS_FAILURE)
+        try:
+            addr_type = _parseSOCKSRequestHeader(data)
+        except (MalformedSOCKSRequest,
+                UnsupportedCommand,
+                UnsupportedVersion) as e:
+            logging.error(e)
+            if isinstance(e, UnsupportedVersion):
+                self._sendReply(SOCKS_FAILURE)
+            elif isinstance(e, UnsupportedCommand):
+                self._sendReply(COMMAND_NOT_SUPPORTED)
+            else:
+                self._sendReply(SOCKS_FAILURE)
             self.transport.loseConnection()
             return
 
-        if cmd != CONNECT:
-            msg = "SOCKS client tried an unsupported request: {}."
-            logging.error(msg.format(cmd))
-            self._sendReply(COMMAND_NOT_SUPPORTED)
-            self.transport.loseConnection()
-            return
+        data = data[REQUEST_HEADER_LEN:]
 
-        if rsv != RSV:
-            msg = "Reserved byte was non-zero in SOCKS client request."
-            logging.error(msg)
-            self._sendReply(SOCKS_FAILURE)
-            self.transport.loseConnection()
-            return
-
-        IPv4_LEN = 4
-        IPv6_LEN = 16
-        PORT_LEN = 2
-
-        if addr_type == IPv4:
-            addr = data[offset : offset + IPv4_LEN]
-            offset += IPv4_LEN
-            port = port = data[offset : offset + PORT_LEN]
-            self.request = ExitRequest(port, addr=addr)
-        elif addr_type == DOMAIN_NAME:
-            length = struct.unpack("!B", data[offset])[0]
-            # hostname length is 1 byte
-            offset += 1
-            host = data[offset : offset + length]
-            offset += length
-            port = data[offset : offset + PORT_LEN]
-            self.request = ExitRequest(port, host=host)
-        elif addr_type == IPv6:
-            addr = data[offset : offset + IPv6_LEN]
-            offset += IPv6_LEN
-            port = data[offset : offset + PORT_LEN]
-            self.request = ExitRequest(port, addr=addr)
-        else:
-            msg = "SOCKS client made a request with unsupported address "
-            msg += "type: {}.".format(addr_type)
-            self._sendReply(ADDRESS_TYPE_NOT_SUPPORTED)
+        try:
+            self.request = _parseRequest(data, addr_type)
+        except (MalformedSOCKSRequest, UnsupportedAddressType) as e:
+            logging.error(e)
+            if isinstance(e, MalformedSOCKSRequest):
+                self._sendReply(SOCKS_FAILURE)
+            else:
+                self._sendReply(ADDRESS_TYPE_NOT_SUPPORTED)
             self.transport.loseConnection()
             return
 
@@ -271,6 +264,116 @@ class OppySOCKSProtocol(Protocol):
         incoming handshake request.
         '''
         logging.debug("SOCKS made a local connection.")
+
+
+def _parseHandshake(data):
+    
+    if len(data) < VER_LEN+NMETHODS_LEN:
+        msg = "Not enough data for a valid SOCKS handshake."
+        raise MalformedSOCKSHandshake(msg)
+
+    pos = 0
+    version = data[:VER_LEN]
+    pos += VER_LEN
+    nmethods = data[pos:pos+NMETHODS_LEN]
+    pos += NMETHODS_LEN
+
+    if version != VER:
+        msg = "Unsupported SOCKS version: {}".format(ord(version))
+        raise UnsupportedVersion(msg)
+
+    if nmethods == "\x00":
+        msg = "No supported SOCKS methods in received handshake."
+        raise NoSupportedMethods(msg)
+
+    _nmethods = struct.unpack("!B", nmethods)[0]
+
+    if len(data) < VER_LEN+NMETHODS_LEN+_nmethods:
+        msg = "Not enough data for a valid SOCKS handshake."
+        raise MalformedSOCKSHandshake(msg)
+
+    methods = data[pos:pos+_nmethods]
+
+    return methods
+
+
+def _parseSOCKSRequestHeader(data):
+
+    if len(data) < VER_LEN+CMD_LEN+RSV_LEN+ADDR_TYPE_LEN:
+        msg = "Not enough data for a valid SOCKS request."
+        raise MalformedSOCKSRequest(msg)
+
+    pos = 0
+    ver = data[:VER_LEN]
+    pos += VER_LEN
+    cmd = data[pos:pos+CMD_LEN]
+    pos += CMD_LEN
+    rsv = data[pos:pos+RSV_LEN]
+    pos += RSV_LEN
+    addr_type = data[pos:pos+ADDR_TYPE_LEN]
+    pos += ADDR_TYPE_LEN
+
+    if ver != VER:
+        raise UnsupportedVersion("Unsupported version: {}".format(ord(ver)))
+
+    if cmd != CONNECT:
+        raise UnsupportedCommand("Unsupported command: {}".format(ord(cmd)))
+
+    if rsv != RSV:
+        raise MalformedSOCKSRequest("Reserved byte was non-zero.")
+
+    return addr_type
+
+
+def _parseRequest(data, addr_type):
+    if addr_type == IPv4:
+        request = _parseIPv4Request(data)
+    elif addr_type == DOMAIN_NAME:
+        request = _parseHostRequest(data)
+    elif addr_type == IPv6:
+        request = _parseIPv6Request(data)
+    else:
+        msg = ("OppySOCKSProtocol received a request with unsupported "
+               "address type: {}".format(ord(addr_type)))
+        raise UnsupportedAddressType(msg)
+
+    return request
+
+
+def _parseIPv4Request(data):
+    if len(data) < IPv4_LEN+PORT_LEN:
+        msg = "Not enough data for a valid IPv4 request."
+        raise MalformedSOCKSRequest(msg)
+
+    addr = data[:IPv4_LEN]
+    port = data[IPv4_LEN:IPv4_LEN+PORT_LEN]
+    return ExitRequest(port, addr=addr)
+
+
+def _parseHostRequest(data):
+    try:
+        length = struct.unpack("!B", data[0])[0]
+        if len(data) < 1+length+PORT_LEN:
+            raise IndexError
+    except (struct.error, IndexError):
+        msg = "Not enough data for a valid Domain Name request."
+        raise MalformedSOCKSRequest(msg)
+
+    # hostname length is 1 byte
+    pos = 1
+    host = data[pos:pos+length]
+    pos += length
+    port = data[pos:pos+PORT_LEN]
+    return ExitRequest(port, host=host)
+
+
+def _parseIPv6Request(data):
+    if len(data) < IPv6_LEN+PORT_LEN:
+        msg = "Not enough data for a valid IPv6 request."
+        raise MalformedSOCKSRequest(msg)
+    addr = data[:IPv6_LEN]
+    port = data[IPv6_LEN:IPv6_LEN+PORT_LEN]
+    return ExitRequest(port, addr=addr)
 
 
 class OppySOCKSProtocolFactory(ServerFactory):
