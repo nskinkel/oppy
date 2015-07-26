@@ -12,17 +12,17 @@ from stem import Flag
 # TODO: mention in docs the assumptions made here
 #       (i.e. primarily that node fprints are guaranteed to be in descriptors)
 
-def nodeUsableWithOther(node1, node2, descriptors):
+def nodeUsableWithOther(desc1, status_entry1, desc2, status_entry2):
     # return True if test_node is usable in a circuit with node
     # check:
     #   - nodes are not equal
     #   - nodes are not in same family
     #   - nodes are not in same /16 subnet
-    if node1 == node2:
+    if status_entry1.fingerprint == status_entry2.fingerprint:
         return False
-    if inSameFamily(node1, node2, descriptors):
+    if inSameFamily(desc1, status_entry1, desc2, status_entry2):
         return False
-    if inSame16Subnet(node1, node2, descriptors):
+    if inSame16Subnet(status_entry1, status_entry2):
         return False
 
     return True
@@ -36,14 +36,14 @@ def selectWeightedNode(weighted_nodes):
     end = len(weighted_nodes)-1
     mid = int((end+begin)/2)
     while True:
-        if (r <= weighted_nodes[mid][1]):
-            if (mid == begin):
+        if r <= weighted_nodes[mid][1]:
+            if mid == begin:
                 return weighted_nodes[mid][0]
             else:
                 end = mid
                 mid = int((end+begin)/2)
         else:
-            if (mid == end):
+            if mid == end:
                 raise ValueError('Weights must sum to 1.')
             else:
                 begin = mid+1
@@ -57,7 +57,7 @@ def getWeightedNodes(nodes, weights):
     """
     # compute total weight
     total_weight = sum([float(weights[n]) for n in nodes])
-    if (total_weight == 0):
+    if total_weight == 0:
         raise ValueError('Error: Node list has total weight zero.')
 
     # create cumulative weights
@@ -81,7 +81,7 @@ def getPositionWeights(nodes, cons_rel_stats, position, bw_weights,
         weight = float(getBwweight(r.flags, position, bw_weights))
         weight_scaled = weight / bwweightscale
         weights[node] = bw * weight_scaled
-    return weights 
+    return weights
 
 
 def getBwweight(flags, position, bw_weights):
@@ -91,99 +91,52 @@ def getBwweight(flags, position, bw_weights):
              one of 'g' for guard, 'm' for middle, and 'e' for exit
         bw_weights: bandwidth_weights from NetworkStatusDocumentV3 consensus
     """
-    if (position == 'g'):
+    if position == 'g':
         if (Flag.GUARD in flags) and (Flag.EXIT in flags):
             return bw_weights['Wgd']
-        elif (Flag.GUARD in flags):
+        elif Flag.GUARD in flags:
             return bw_weights['Wgg']
-        elif (Flag.EXIT not in flags):
+        elif Flag.EXIT not in flags:
             return bw_weights['Wgm']
         else:
             raise ValueError('Wge weight does not exist.')
-    elif (position == 'm'):
+    elif position == 'm':
         if (Flag.GUARD in flags) and (Flag.EXIT in flags):
             return bw_weights['Wmd']
-        elif (Flag.GUARD in flags):
+        elif Flag.GUARD in flags:
             return bw_weights['Wmg']
-        elif (Flag.EXIT in flags):
+        elif Flag.EXIT in flags:
             return bw_weights['Wme']
         else:
             return bw_weights['Wmm']
-    elif (position == 'e'):
+    elif position == 'e':
         if (Flag.GUARD in flags) and (Flag.EXIT in flags):
             return bw_weights['Wed']
-        elif (Flag.GUARD in flags):
+        elif Flag.GUARD in flags:
             return bw_weights['Weg']
-        elif (Flag.EXIT in flags):
+        elif Flag.EXIT in flags:
             return bw_weights['Wee']
         else:
-            return bw_weights['Wem']    
+            return bw_weights['Wem']
     else:
-        raise ValueError('get_weight does not support position {0}.'.format(
-            position))
+        raise ValueError('Unrecognized position: {}.'.format(position))
 
 
-def mightExitToPort(descriptor, port):
-    """Returns if will exit to port for *some* ip.
-    Is conservative - never returns a false negative."""
-    for rule in descriptor.exit_policy:
-        if rule.min_port <= port <= rule.max_port:
-            if rule.is_accept:
-                return True
-            else:
-                if rule.is_address_wildcard():
-                    return False
-                if rule.get_masked_bits() == 0:
-                    return False
-    # default accept if no rule matches
-    return True
-
-
-def canExitToPort(descriptor, port):
-    """Derived from compare_unknown_tor_addr_to_addr_policy() in policies.c.
-    That function returns ACCEPT, PROBABLY_ACCEPT, REJECT, and PROBABLY_REJECT.
-    We ignore the PROBABLY status, as is done by Tor in the uses of
-    compare_unknown_tor_addr_to_addr_policy() that we care about."""
-    for rule in descriptor.exit_policy:
-        if rule.min_port <= port <= rule.max_port:
-            if rule.is_address_wildcard() or rule.get_masked_bits() == 0:
-                return rule.is_accept
-    # default accept if no rule matches
-    return True
-    
-
-def policyIsRejectStar(exit_policy):
-    """Replicates Tor function of same name in policies.c."""
-    for rule in exit_policy:
-        if rule.is_accept:
-            return False
-        elif rule.min_port in (0, 1) and rule.max_port == 65535:
-            return True
-        elif rule.is_port_wildcard():
-            if rule.is_address_wildcard() or rule.get_masked_bits() == 0:
-                return True
-
-    return True
-    
-
-def inSameFamily(node1, node2, descriptors):
+def inSameFamily(desc1, status_entry1, desc2, status_entry2):
     """Takes list of descriptors and two node fingerprints,
     checks if nodes list each other as in the same family."""
-    desc1 = descriptors[node1]
-    desc2 = descriptors[node2]
-    fprint1 = desc1.fingerprint
-    fprint2 = desc2.fingerprint
-
+    fprint1 = status_entry1.fingerprint
+    fprint2 = status_entry2.fingerprint
     family1 = set([i.strip(u'$') for i in desc1.family])
     family2 = set([i.strip(u'$') for i in desc2.family])
 
     # True only if both nodes list each other
-    return ((fprint1 in family2) and (fprint2 in family1))
+    return (fprint1 in family2) and (fprint2 in family1)
 
-    
+
 # XXX: what do we do for IPv6?
-def inSame16Subnet(node1, node2, descriptors):
-    address1 = descriptors[node1].address
-    address2 = descriptors[node2].address
+def inSame16Subnet(status_entry1, status_entry2):
+    address1 = status_entry1.address
+    address2 = status_entry2.address
 
-    return (address1.split('.')[:2] == address2.split('.')[:2])
+    return address1.split('.')[:2] == address2.split('.')[:2]

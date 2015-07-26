@@ -19,7 +19,6 @@ from oppy.cell.varlen import (
     CertsCell,
     VersionsCell,
 )
-from oppy.cell.exceptions import NotEnoughBytes
 # TODO: move link cert type/id cert type to cells
 from oppy.connection.definitions import (
     SUPPORTED_LINK_PROTOCOLS,
@@ -33,11 +32,15 @@ from oppy.connection.definitions import (
 # TODO: handle destroy cell (i.e. when should we send one)
 class ConnectionBuildTask(Protocol):
 
-    def __init__(self, connection_manager, relay, link_protocol=3):
-        logging.debug('Creating connection task to {}'.format(relay.address))
+    # XXX relay is a router_status_entry 
+    def __init__(self, connection_manager, micro_status_entry,
+                 link_protocol=3):
+        msg = ("Creating connection task to {}"
+               .format(micro_status_entry.address))
+        logging.debug(msg)
         # MAp all circuits using this connections
         self._connection_manager = connection_manager
-        self.relay = relay
+        self.micro_status_entry = micro_status_entry
         self._link_protocol = link_protocol
         self._read_queue = defer.DeferredQueue()
         self._buffer = ''
@@ -48,7 +51,8 @@ class ConnectionBuildTask(Protocol):
         self._failed = False
 
     def connectionMade(self):
-        logging.debug('Connection made to {}.'.format(self.relay.address))
+        msg = "Connection made to {}.".format(self.micro_status_entry.address)
+        logging.debug(msg)
         try:
             self._tasks = self._sendVersionsCell()
             self._tasks.addCallback(self._processVersionsCell)
@@ -66,9 +70,9 @@ class ConnectionBuildTask(Protocol):
             return
         self._failed = True
         msg = ("Connection lost to {}. Reason: {}."
-               .format(self.relay.fingerprint, reason))
+               .format(self.micro_status_entry.fingerprint, reason))
         if self._current_task is None:
-            self._connectionFailed(msg)        
+            self._connectionFailed(msg)
         else:
             self._current_task.errback(Failure(Exception(msg)))
 
@@ -88,7 +92,7 @@ class ConnectionBuildTask(Protocol):
             # TODO: remove len(NotImplementedBytes) from buffer
             except NotImplementedError as e:
                 msg = ("Connection to {} received an unexpected cell. {}."
-                       .format(self.relay.fingerprint, e))
+                       .format(self.micro_status_entry.fingerprint, e))
                 self._current_task.errback(msg)
                 break
 
@@ -104,7 +108,8 @@ class ConnectionBuildTask(Protocol):
     def _processVersionsCell(self, cell):
         if not isinstance(cell, VersionsCell):
             msg = ("Connection to {} received a {} cell, expected a "
-                   "VersionsCell.".format(self.relay.fingerprint, type(cell)))
+                   "VersionsCell.".format(self.micro_status_entry.fingerprint,
+                                          type(cell)))
             raise TypeError(msg)
 
         self._connection_cert = self.transport.getPeerCertificate()
@@ -112,7 +117,7 @@ class ConnectionBuildTask(Protocol):
         if _connectionSupportsHandshake(self._connection_cert) is False:
             msg = ("Connection to {} does not support our authentication "
                    "handshake. Destroying the connection."
-                   .format(self.relay.fingerprint))
+                   .format(self.micro_status_entry.fingerprint))
             raise ValueError(msg)
 
         try:
@@ -121,7 +126,7 @@ class ConnectionBuildTask(Protocol):
         except ValueError:
             msg = ("Relay with fingerprint {} does not support any of our "
                    "known link protocols. Destroying the connection."
-                   .format(self.relay.fingerprint))
+                   .format(self.micro_status_entry.fingerprint))
             raise ValueError(msg)
 
         return self._recvCell()
@@ -129,7 +134,8 @@ class ConnectionBuildTask(Protocol):
     def _processCertsCell(self, cell):
         if not isinstance(cell, CertsCell):
             msg = ("Connection to {} received a {} cell, expected a "
-                   "CertsCell.".format(self.relay.fingerprint, type(cell)))
+                   "CertsCell.".format(self.micro_status_entry.fingerprint,
+                                       type(cell)))
             raise TypeError(msg)
 
         link_cert, id_cert = _getCertsFromCell(cell)
@@ -137,7 +143,7 @@ class ConnectionBuildTask(Protocol):
         if not _certsHaveValidTime([link_cert, id_cert]):
             msg = ("Certificates sent by {} do not have a valid time. "
                    "Destroying the connection."
-                   .format(self.relay.fingerprint))
+                   .format(self.micro_status_entry.fingerprint))
             raise ValueError(msg)
 
         if not _ASN1KeysEqual(link_cert.get_pubkey(),
@@ -145,25 +151,27 @@ class ConnectionBuildTask(Protocol):
             msg = ("The public key used for the TLS connection to {} is not "
                    "the same key given in the link certificate in the "
                    "CertsCell. Destroying the connection."
-                   .format(self.relay.fingerprint))
+                   .format(self.micro_status_entry.fingerprint))
             raise ValueError(msg)
 
         if not _isRSA1024BitKey(id_cert.get_pubkey()):
             msg = ("The public key in the ID certificate sent by relay {} "
                    "in the CertsCell is not a 1024-bit RSA key. Destroying "
-                   "the connection.".format(self.relay.fingerprint))
+                   "the connection."
+                   .format(self.micro_status_entry.fingerprint))
             raise ValueError(msg)
 
         if not crypto.verifyCertSig(id_cert, link_cert):
             msg = ("The link certificate is not properly signed by the "
                    "ID certificate sent by {} in a CertsCell. Destroying "
-                   "the connection.".format(self.relay.fingerprint))
+                   "the connection."
+                   .format(self.micro_status_entry.fingerprint))
             raise ValueError(msg)
 
         if not crypto.verifyCertSig(id_cert, id_cert):
             msg = ("The ID certificate sent in a CertsCell by {} is not "
                    "properly self-signed. Destroying the connection."
-                   .format(self.relay.fingerprint))
+                   .format(self.micro_status_entry.fingerprint))
             raise ValueError(msg)
 
         return self._recvCell()
@@ -172,7 +180,7 @@ class ConnectionBuildTask(Protocol):
         if not isinstance(cell, AuthChallengeCell):
             msg = ("Connection to {} received a {} cell, expected an "
                    "AuthChallengeCell."
-                   .format(self.relay.fingerprint, type(cell)))
+                   .format(self.micro_status_entry.fingerprint, type(cell)))
             raise TypeError(msg)
         return self._recvCell()
 
@@ -185,7 +193,8 @@ class ConnectionBuildTask(Protocol):
         #         IP address?
         if not isinstance(cell, NetInfoCell):
             msg = ("Connection to {} received a {} cell, expected a "
-                   "NetInfoCell.".format(self.relay.fingerprint, type(cell)))
+                   "NetInfoCell."
+                   .format(self.micro_status_entry.fingerprint, type(cell)))
             raise TypeError(msg)
         return (cell.other_or_address, cell.this_or_addresses[0])
 
@@ -198,7 +207,8 @@ class ConnectionBuildTask(Protocol):
     def _connectionSucceeded(self, _):
         msg = ("Completed authentication handshake to {} using Link Protocol "
                "{}. Connection is now ready for circuit traffic."
-               .format(self.relay.fingerprint, self._link_protocol))
+               .format(self.micro_status_entry.fingerprint,
+                       self._link_protocol))
         logging.debug(msg)
         self._connection_manager.connectionTaskSucceeded(self)
 
@@ -207,13 +217,13 @@ class ConnectionBuildTask(Protocol):
     #       lost
     def _connectionFailed(self, reason):
         msg = ("Authentication handshake to {} failed. Reason: {}."
-               .format(self.relay.fingerprint, reason))
+               .format(self.micro_status_entry.fingerprint, reason))
         logging.debug(msg)
         if self._failed is False:
             self._failed = True
             self.transport.abortConnection()
-        self._connection_manager.connectionTaskFailed(self,
-                                                   Failure(Exception(reason)))
+        self._connection_manager.connectionTaskFailed(
+            self, Failure(Exception(reason)))
 
 
 def _connectionSupportsHandshake(cert):
@@ -246,7 +256,7 @@ def _getCertsFromCell(cell):
 
     link_cert = None
     id_cert = None
-    
+
     for cert_item in cell.cert_payload_items:
         try:
             pem_cert = ssl.DER_cert_to_PEM_cert(cert_item.cert)
@@ -258,10 +268,9 @@ def _getCertsFromCell(cell):
                 id_cert = SSLCrypto.load_certificate(SSLCrypto.FILETYPE_PEM,
                                                      pem_cert)
             else:
-                msg = ("Expected a link certificate type {} or an ID "
-                       "certificate type. Got {} certificate type."
-                       .format(LINK_CERT_TYPE, ID_CERT_TYPE,
-                               cert_item.cert_type))
+                msg = ("Expected a link certificate type or an id certificate "
+                       "type. Got {} certificate type."
+                       .format(cert_item.cert_type))
                 raise ValueError(msg)
         except SSLCrypto.Error as e:
             raise ValueError("Certificate decoding failed: {}.", e)
@@ -290,7 +299,8 @@ def _ASN1KeysEqual(key1, key2):
         # use this function somewhere else in the future
         return crypto.constantStrEqual(key1_ASN1, key2_ASN1)
     except Exception as e:
-        logging.debug("Failed to parse ASN1 key: {}.".format(e))
+        msg = "Failed to parse ASN1 key: {}.".format(e)
+        logging.debug(msg)
         return False
 
 

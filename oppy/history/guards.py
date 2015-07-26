@@ -1,4 +1,3 @@
-# this is a stub class
 '''
 5. Guard nodes
 
@@ -62,19 +61,15 @@ class GuardManager(object):
     def __init__(self, netstatus):
         self._netstatus = netstatus
 
-    # this is a stub. just pick a few random guards
+    # this is a stub. just pick some random guards.
     @defer.inlineCallbacks
     def getUsableGuards(self):
-        # choose 3 random fingerprints of relays with the guard flag
-        descriptors = yield self._netstatus.getDescriptors()
-        guards = set()
-        MAX_TRIES = 50
-        for i in xrange(MAX_TRIES):
-            guard = random.choice([d.fingerprint for d in descriptors.values()
-                                   if Flag.GUARD in d.flags and
-                                      d.ntor_onion_key is not None and
-                                      d.hibernating is False])
-            guards.add(str(guard))
-            if len(guards) == 3:
-                break
-        defer.returnValue(list(guards))
+        microconsensus = yield self._netstatus.getMicroconsensus()
+
+        guards = [n for n in microconsensus.routers.values()
+                  if (Flag.GUARD in n.flags and\
+                      Flag.RUNNING in n.flags and\
+                      Flag.FAST in n.flags and\
+                      Flag.STABLE in n.flags)]
+        random.shuffle(guards)
+        defer.returnValue([g.fingerprint for g in guards[:20]])

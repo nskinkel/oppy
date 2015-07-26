@@ -6,6 +6,14 @@ import hashlib
 import itertools
 
 
+def decodeMicrodescriptorIdentifier(microdescriptor):
+    ident = microdescriptor.identifier
+    short = 4-len(ident)%4
+    if short:
+        ident += '='*short
+    return base64.b64decode(ident).rstrip('=')
+
+
 def signingKeyToSHA1(signing_key):
     '''Return the SHA-1 digest of *signing_key*.
 
@@ -15,13 +23,6 @@ def signingKeyToSHA1(signing_key):
     m = hashlib.sha1()
     m.update(base64.b64decode(''.join(signing_key.split('\n')[1:4])))
     return m.digest()
-
-
-# a decorator to simplify building class dispatch tables
-def dispatch(d, k):
-    def func(f):
-        d[k] = f
-    return func
 
 
 def enum(**enums):

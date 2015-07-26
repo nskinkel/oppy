@@ -18,7 +18,7 @@ class ConnectionTest(unittest.TestCase):
     @mock.patch('oppy.connection.connectionmanager.ConnectionManager',
                 autospec=True)
     def setUp(self, cm, cbt):
-        cbt.relay = mock.Mock()
+        cbt.micro_status_entry = mock.Mock()
         self.cbt = cbt
         self.cm = cm
         self.connection = connection.Connection(cm, cbt)

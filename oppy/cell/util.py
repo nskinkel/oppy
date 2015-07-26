@@ -1,24 +1,20 @@
 # Copyright 2014, 2015, Nik Kinkel and David Johnston
 # See LICENSE for licensing information
 
+import ipaddress
 import struct
 
-import ipaddress
-
 import oppy.cell.definitions as DEF
-import oppy.util.tools as tools
 
 from oppy.cell.exceptions import BadLinkSpecifier, BadPayloadData
+from oppy.util.tools import decodeMicrodescriptorIdentifier
 
 
 class LinkSpecifier(object):
     '''.. note:: tor-spec, Section 5.1.2'''
 
-    def __init__(self, relay, legacy=False):
+    def __init__(self, path_node, legacy=False):
         '''
-        :param stem.descriptor.server_descriptor.RelayDescriptor relay:
-            relay descriptor that describes the relay for this link
-            specifier
         :param bool legacy: if **True**, make a legacy link specifier.
             make an IPv4 or IPv6 link specifier otherwise according to
             the relay's public IP address.
@@ -26,10 +22,12 @@ class LinkSpecifier(object):
         if legacy is True:
             self.lstype = DEF.LSTYPE_LEGACY
             self.lslen = DEF.LSLEN_LEGACY
-            self.lspec = tools.signingKeyToSHA1(relay.signing_key)
+            self.lspec = decodeMicrodescriptorIdentifier(
+                                                    path_node.microdescriptor)
         else:
-            addr = ipaddress.ip_address(unicode(relay.address))
-            port = relay.or_port
+            address = path_node.router_status_entry.address
+            addr = ipaddress.ip_address(unicode(address))
+            port = path_node.router_status_entry.or_port
             if isinstance(addr, ipaddress.IPv4Address):
                 self.lstype = DEF.LSTYPE_IPv4
                 self.lslen = DEF.LSLEN_IPv4

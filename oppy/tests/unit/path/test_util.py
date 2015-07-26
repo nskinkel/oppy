@@ -28,12 +28,17 @@ class PathUtilTest(unittest.TestCase):
     @mock.patch('oppy.path.util.inSameFamily')
     @mock.patch('oppy.path.util.inSame16Subnet')
     def test_NodeUsableWithOther_no_equal_nodes(self, mock_subnet,
-                                                mock_family):
-        node1 = 'test'
-        node2 = node1
+        mock_family):
 
-        self.assertFalse(path_util.nodeUsableWithOther(node1, node2,
-                                                       mock.Mock()))
+        desc1 = 'desc1'
+        se1 = mock.Mock()
+        se1.fingerprint = 'fprint1'
+        desc2 = 'desc1'
+        se2 = mock.Mock()
+        se2.fingerprint = 'fprint1'
+
+        self.assertFalse(path_util.nodeUsableWithOther(
+            desc1, se1, desc2, se2))
         self.assertEqual(mock_subnet.call_count, 0)
         self.assertEqual(mock_family.call_count, 0)
 
@@ -41,58 +46,61 @@ class PathUtilTest(unittest.TestCase):
     @mock.patch('oppy.path.util.inSame16Subnet')
     def test_nodeUsableWithOther_no_in_same_family(self, mock_subnet,
                                                    mock_family):
+        desc1 = 'desc1'
+        se1 = mock.Mock()
+        se1.fingerprint = 'fprint1'
+        desc2 = 'desc2'
+        se2 = mock.Mock()
+        se2.fingerprint = 'fprint2'
+
         mock_family.return_value = True
         mock_subnet.return_value = False
 
-        node1 = '1'
-        node2 = '2'
-        descriptors = mock.Mock()
+        self.assertFalse(path_util.nodeUsableWithOther(
+            desc1, se1, desc2, se2))
 
-        self.assertFalse(path_util.nodeUsableWithOther(node1, node2,
-                                                       descriptors))
         self.assertEqual(mock_family.call_count, 1)
-        self.assertEqual(mock_family.call_args_list,
-                         [mock.call(node1, node2, descriptors)])
         self.assertEqual(mock_subnet.call_count, 0)
 
     @mock.patch('oppy.path.util.inSameFamily')
     @mock.patch('oppy.path.util.inSame16Subnet')
     def test_nodeUsableWithOther_no_in_same_16_subnet(self, mock_subnet,
                                                       mock_family):
+        desc1 = 'desc1'
+        se1 = mock.Mock()
+        se1.fingerprint = 'fprint1'
+        desc2 = 'desc2'
+        se2 = mock.Mock()
+        se2.fingerprint = 'fprint2'
+
         mock_family.return_value = False
         mock_subnet.return_value = True
 
-        node1 = '1'
-        node2 = '2'
-        descriptors = mock.Mock()
+        self.assertFalse(path_util.nodeUsableWithOther(
+            desc1, se1, desc2, se2))
 
-        self.assertFalse(path_util.nodeUsableWithOther(node1, node2,
-                                                       descriptors))
         self.assertEqual(mock_family.call_count, 1)
-        self.assertEqual(mock_family.call_args_list,
-                         [mock.call(node1, node2, descriptors)])
         self.assertEqual(mock_subnet.call_count, 1)
-        self.assertEqual(mock_subnet.call_args_list,
-                         [mock.call(node1, node2, descriptors)])
 
     @mock.patch('oppy.path.util.inSameFamily')
     @mock.patch('oppy.path.util.inSame16Subnet')
     def test_nodeUsableWithOther_yes(self, mock_subnet, mock_family):
+        desc1 = 'desc1'
+        se1 = mock.Mock()
+        se1.fingerprint = 'fprint1'
+        desc2 = 'desc2'
+        se2 = mock.Mock()
+        se2.fingerprint = 'fprint2'
+
         mock_family.return_value = False
         mock_subnet.return_value = False
 
-        node1 = '1'
-        node2 = '2'
-        descriptors = mock.Mock()
+        self.assertTrue(path_util.nodeUsableWithOther(
+            desc1, se1, desc2, se2))
 
-        self.assertTrue(path_util.nodeUsableWithOther(node1, node2,
-                                                      descriptors))
         self.assertEqual(mock_family.call_count, 1)
-        self.assertEqual(mock_family.call_args_list,
-                         [mock.call(node1, node2, descriptors)])
         self.assertEqual(mock_subnet.call_count, 1)
-        self.assertEqual(mock_subnet.call_args_list,
-                         [mock.call(node1, node2, descriptors)])
+
 
     @mock.patch('random.random')
     def test_selectWeightedNode_lt_mid_equal(self, mock_random):
@@ -280,262 +288,102 @@ class PathUtilTest(unittest.TestCase):
                           'x',
                           self.bw_weights)
 
-    def test_mightExitToPort_in_accept_range(self):
-        desc = mock.Mock()
-        mock_rule_1 = mock.Mock()
-        mock_rule_1.min_port = 1
-        mock_rule_1.max_port = 10
-        mock_rule_1.is_accept = True
-        desc.exit_policy = [mock_rule_1]
-
-        self.assertTrue(path_util.mightExitToPort(desc, 8))
-
-    def test_mightExitToPort_no_in_accept_range_with_address_wildcard(self):
-        desc = mock.Mock()
-        mock_rule_1 = mock.Mock()
-        mock_rule_1.min_port = 1
-        mock_rule_1.max_port = 10
-        mock_rule_1.is_accept = False
-        mock_rule_1.is_address_wildcard = mock.Mock(return_value=True)
-        desc.exit_policy = [mock_rule_1]
-
-        self.assertFalse(path_util.mightExitToPort(desc, 8))
-
-    def test_mightExitToPort_no_in_accept_range_no_addr_wildcard_0_masked_bits(self):
-        desc = mock.Mock()
-        mock_rule_1 = mock.Mock()
-        mock_rule_1.min_port = 1
-        mock_rule_1.max_port = 10
-        mock_rule_1.is_accept = False
-        mock_rule_1.is_address_wildcard = mock.Mock(return_value=False)
-        mock_rule_1.get_masked_bits = mock.Mock(return_value=0)
-        desc.exit_policy = [mock_rule_1]
-
-        self.assertFalse(path_util.mightExitToPort(desc, 8))
-
-    def test_mightExitToPort_in_range_default_accept_no_matches(self):
-        desc = mock.Mock()
-        mock_rule_1 = mock.Mock()
-        mock_rule_1.min_port = 1
-        mock_rule_1.max_port = 10
-        mock_rule_1.is_accept = False
-        mock_rule_1.is_address_wildcard = mock.Mock(return_value=False)
-        mock_rule_1.get_masked_bits = mock.Mock(return_value=1)
-        desc.exit_policy = [mock_rule_1]
-
-        self.assertTrue(path_util.mightExitToPort(desc, 8))
-
-    def test_mightExitToPort_not_in_range_default_accept_no_matches(self):
-        desc = mock.Mock()
-        mock_rule_1 = mock.Mock()
-        mock_rule_1.min_port = 1
-        mock_rule_1.max_port = 10
-        mock_rule_1.is_accept = False
-        mock_rule_1.is_address_wildcard = mock.Mock(return_value=False)
-        mock_rule_1.get_masked_bits = mock.Mock(return_value=0)
-        desc.exit_policy = [mock_rule_1]
-
-        self.assertTrue(path_util.mightExitToPort(desc, 11))
-
-    def test_canExitToPort_port_in_range_addr_wildcard(self):
-        desc = mock.Mock()
-        mock_rule_1 = mock.Mock()
-        mock_rule_1.min_port = 1
-        mock_rule_1.max_port = 10
-        mock_rule_1.is_address_wildcard = mock.Mock(return_value=True)
-        desc.exit_policy = [mock_rule_1]
-
-        mock_rule_1.is_accept = False
-        self.assertFalse(path_util.mightExitToPort(desc, 8))
-
-        mock_rule_1.is_accept = True
-        self.assertTrue(path_util.mightExitToPort(desc, 8))
-
-    def test_canExitToPort_port_in_range_masked_bits_0(self):
-        desc = mock.Mock()
-        mock_rule_1 = mock.Mock()
-        mock_rule_1.min_port = 1
-        mock_rule_1.max_port = 10
-        mock_rule_1.is_address_wildcard = mock.Mock(return_value=False)
-        mock_rule_1.get_masked_bits = mock.Mock(return_value=0)
-        desc.exit_policy = [mock_rule_1]
-
-        mock_rule_1.is_accept = False
-        self.assertFalse(path_util.mightExitToPort(desc, 8))
-
-        mock_rule_1.is_accept = True
-        self.assertTrue(path_util.mightExitToPort(desc, 8))
-
-    def test_canExitToPort_in_range_default(self):
-        desc = mock.Mock()
-        mock_rule_1 = mock.Mock()
-        mock_rule_1.min_port = 1
-        mock_rule_1.max_port = 10
-        mock_rule_1.is_address_wildcard = mock.Mock(return_value=False)
-        mock_rule_1.get_masked_bits = mock.Mock(return_value=1)
-        desc.exit_policy = [mock_rule_1]
-
-        mock_rule_1.is_accept = True
-        self.assertTrue(path_util.mightExitToPort(desc, 8))
-
-    def test_canExitToPort_out_of_range_default(self):
-        desc = mock.Mock()
-        mock_rule_1 = mock.Mock()
-        mock_rule_1.min_port = 1
-        mock_rule_1.max_port = 10
-        mock_rule_1.is_address_wildcard = mock.Mock(return_value=False)
-        mock_rule_1.get_masked_bits = mock.Mock(return_value=1)
-        desc.exit_policy = [mock_rule_1]
-
-        mock_rule_1.is_accept = True
-        self.assertTrue(path_util.mightExitToPort(desc, 11))
-
-    def test_policyIsRejectStar_is_accept(self):
-        mock_rule_1 = mock.Mock()
-        mock_rule_1.is_accept = True
-        mock_policy = [mock_rule_1]
-
-        self.assertFalse(path_util.policyIsRejectStar(mock_policy))
-
-    def test_policyIsRejectStar_reject_with_port_range_cover(self):
-        mock_rule_1 = mock.Mock()
-        mock_rule_1.is_accept = False
-        mock_rule_1.min_port = 0
-        mock_rule_1.max_port = 65535
-        mock_policy = [mock_rule_1]
-
-        self.assertTrue(path_util.policyIsRejectStar(mock_policy))
-
-        mock_rule_1.min_port = 1
-        self.assertTrue(path_util.policyIsRejectStar(mock_policy))
-
-    def test_policyIsRejectStar_port_wildcard_with_addr_wildcard(self):
-        mock_rule_1 = mock.Mock()
-        mock_rule_1.is_accept = False
-        mock_rule_1.min_port = 1024
-        mock_rule_1.max_port = 8192
-        mock_rule_1.is_port_wildcard = mock.Mock(return_value=True)
-        mock_rule_1.is_address_wildcard = mock.Mock(return_value=True)
-        mock_policy = [mock_rule_1]
-
-        self.assertTrue(path_util.policyIsRejectStar(mock_policy))
-
-    def test_policyIsRejectStar_port_wildcard_with_masked_bits_0(self):
-        mock_rule_1 = mock.Mock()
-        mock_rule_1.is_accept = False
-        mock_rule_1.min_port = 1024
-        mock_rule_1.max_port = 8192
-        mock_rule_1.is_port_wildcard = mock.Mock(return_value=True)
-        mock_rule_1.is_address_wildcard = mock.Mock(return_value=False)
-        mock_rule_1.get_basked_bits = mock.Mock(return_value=0)
-        mock_policy = [mock_rule_1]
-
-        self.assertTrue(path_util.policyIsRejectStar(mock_policy))
-
-    def test_policyIsRejectStar_rule_miss_defaults(self):
-        mock_rule_1 = mock.Mock()
-        mock_rule_1.is_accept = False
-        mock_rule_1.min_port = 1024
-        mock_rule_1.max_port = 8192
-        mock_rule_1.is_port_wildcard = mock.Mock(return_value=False)
-        mock_policy = [mock_rule_1]
-
-        self.assertTrue(path_util.policyIsRejectStar(mock_policy))
-
     def test_inSameFamily_yes(self):
-        mock_desc_1 = mock.Mock()
-        mock_desc_2 = mock.Mock()
+        mock_rel_stat1 = mock.Mock()
+        mock_rel_stat2 = mock.Mock()
 
-        mock_desc_1.fingerprint = u'fprint1'
-        mock_desc_2.fingerprint = u'fprint2'
+        mock_rel_stat1.fingerprint = u'fprint1'
+        mock_rel_stat2.fingerprint = u'fprint2'
 
-        mock_desc_1.family = [u'$hey', u'$fprint2']
-        mock_desc_2.family = [u'$yo', u'$fprint1']
+        mock_desc1 = mock.Mock()
+        mock_desc2 = mock.Mock()
 
-        descriptors = {mock_desc_1: mock_desc_1, mock_desc_2: mock_desc_2}
+        mock_desc1.family = [u'$hey', u'$fprint2']
+        mock_desc2.family = [u'$yo', u'$fprint1']
 
-        self.assertTrue(path_util.inSameFamily(mock_desc_1, mock_desc_2,
-                                               descriptors))
+        self.assertTrue(path_util.inSameFamily(mock_desc1, mock_rel_stat1,
+                                               mock_desc2, mock_rel_stat2))
 
     def test_inSameFamily_no_node1_lists_node2(self):
-        mock_desc_1 = mock.Mock()
-        mock_desc_2 = mock.Mock()
+        mock_rel_stat1 = mock.Mock()
+        mock_rel_stat2 = mock.Mock()
 
-        mock_desc_1.fingerprint = u'fprint1'
-        mock_desc_2.fingerprint = u'fprint2'
+        mock_rel_stat1.fingerprint = u'fprint1'
+        mock_rel_stat2.fingerprint = u'fprint2'
 
-        mock_desc_1.family = [u'$hey', u'$fprint2']
-        mock_desc_2.family = [u'$yo']
+        mock_desc1 = mock.Mock()
+        mock_desc2 = mock.Mock()
 
-        descriptors = {mock_desc_1: mock_desc_1, mock_desc_2: mock_desc_2}
+        mock_desc1.family = [u'$hey', u'$fprint2']
+        mock_desc2.family = [u'$yo']
 
-        self.assertFalse(path_util.inSameFamily(mock_desc_1, mock_desc_2,
-                                                descriptors))
+        self.assertFalse(path_util.inSameFamily(mock_desc1, mock_rel_stat1,
+                                                mock_desc2, mock_rel_stat2))
 
     def test_inSameFamily_no_node1_no_list(self):
-        mock_desc_1 = mock.Mock()
-        mock_desc_2 = mock.Mock()
+        mock_rel_stat1 = mock.Mock()
+        mock_rel_stat2 = mock.Mock()
 
-        mock_desc_1.fingerprint = u'fprint1'
-        mock_desc_2.fingerprint = u'fprint2'
+        mock_rel_stat1.fingerprint = u'fprint1'
+        mock_rel_stat2.fingerprint = u'fprint2'
 
-        mock_desc_1.family = [u'$hey']
-        mock_desc_2.family = [u'$yo', u'$fprint1']
+        mock_desc1 = mock.Mock()
+        mock_desc2 = mock.Mock()
 
-        descriptors = {mock_desc_1: mock_desc_1, mock_desc_2: mock_desc_2}
+        mock_desc1.family = [u'$hey']
+        mock_desc2.family = [u'$yo', u'$fprint1']
 
-        self.assertFalse(path_util.inSameFamily(mock_desc_1, mock_desc_2,
-                                                descriptors))
+        self.assertFalse(path_util.inSameFamily(mock_desc1, mock_rel_stat1,
+                                                mock_desc2, mock_rel_stat2))
 
     def test_inSameFamily_no_common_lists(self):
-        mock_desc_1 = mock.Mock()
-        mock_desc_2 = mock.Mock()
+        mock_rel_stat1 = mock.Mock()
+        mock_rel_stat2 = mock.Mock()
 
-        mock_desc_1.fingerprint = u'fprint1'
-        mock_desc_2.fingerprint = u'fprint2'
+        mock_rel_stat1.fingerprint = u'fprint1'
+        mock_rel_stat2.fingerprint = u'fprint2'
 
-        mock_desc_1.family = [u'$hey']
-        mock_desc_2.family = [u'$yo']
+        mock_desc1 = mock.Mock()
+        mock_desc2 = mock.Mock()
 
-        descriptors = {mock_desc_1: mock_desc_1, mock_desc_2: mock_desc_2}
+        mock_desc1.family = [u'$hey']
+        mock_desc2.family = [u'$yo']
 
-        self.assertFalse(path_util.inSameFamily(mock_desc_1, mock_desc_2,
-                                                descriptors))
+        self.assertFalse(path_util.inSameFamily(mock_desc1, mock_rel_stat1,
+                                                mock_desc2, mock_rel_stat2))
 
     def test_inSame16Subnet_yes(self):
         ip1 = mock.Mock()
         ip1.address = u'162.233.1.2'
         ip2 = mock.Mock()
         ip2.address = u'162.233.3.4'
-        md = {ip1: ip1, ip2: ip2}
 
-        self.assertTrue(path_util.inSame16Subnet(ip1, ip2, md))
+        self.assertTrue(path_util.inSame16Subnet(ip1, ip2))
 
         ip1.address = u'162.233.157.234'
         ip2.address = u'162.233.99.8'
 
-        self.assertTrue(path_util.inSame16Subnet(ip1, ip2, md))
+        self.assertTrue(path_util.inSame16Subnet(ip1, ip2))
 
         ip1.address = u'1.1.1.1'
         ip2.address = u'1.1.1.1'
 
-        self.assertTrue(path_util.inSame16Subnet(ip1, ip2, md))
+        self.assertTrue(path_util.inSame16Subnet(ip1, ip2))
 
     def test_inSame16Subnet_no(self):
         ip1 = mock.Mock()
         ip1.address = u'162.234.1.2'
         ip2 = mock.Mock()
         ip2.address = u'162.233.1.2'
-        md = {ip1: ip1, ip2: ip2}
 
-        self.assertFalse(path_util.inSame16Subnet(ip1, ip2, md))
+        self.assertFalse(path_util.inSame16Subnet(ip1, ip2))
 
         ip1.address = u'162.233.157.234'
         ip2.address = u'161.233.157.234'
 
-        self.assertFalse(path_util.inSame16Subnet(ip1, ip2, md))
+        self.assertFalse(path_util.inSame16Subnet(ip1, ip2))
 
         ip1.address = u'1.0.1.1'
         ip2.address = u'0.1.1.1'
 
-        self.assertFalse(path_util.inSame16Subnet(ip1, ip2, md))
+        self.assertFalse(path_util.inSame16Subnet(ip1, ip2))

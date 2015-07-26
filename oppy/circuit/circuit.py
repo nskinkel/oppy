@@ -48,12 +48,11 @@ from oppy.circuit.definitions import (
     SENDME_THRESHOLD,
     WINDOW_SIZE,
     CState,
-    CircuitType,
     BACKWARD_CELL_TYPES,
     BACKWARD_RELAY_CELL_TYPES,
     MAX_STREAMS_V3,
 )
-from oppy.util.tools import ctr, enum
+from oppy.util.tools import ctr
 
 
 # Major TODO's:
@@ -67,8 +66,6 @@ class Circuit(object):
                  path, crypt_path, max_streams=MAX_STREAMS_V3):
         '''
         :param int cid: id of this circuit
-        :param oppy.path.path.PathConstraints path_constraints: the constraints
-            that this circuit's path should satisfy
         '''
         self._circuit_manager = circuit_manager
         self.circuit_id = circuit_id
@@ -89,7 +86,7 @@ class Circuit(object):
         # deliver window is incoming data cells
         self._deliver_window = CIRCUIT_WINDOW_THRESHOLD_INIT
         # package window is outgoing data cells
-        self._package_window  = CIRCUIT_WINDOW_THRESHOLD_INIT
+        self._package_window = CIRCUIT_WINDOW_THRESHOLD_INIT
 
         self._pollReadQueue()
         self._pollWriteQueue()
@@ -117,17 +114,11 @@ class Circuit(object):
         if len(self._streams) == self._max_streams:
             return False
 
-        if request.is_host:
-            return self._path.exit.exit_policy.can_exit_to(port=request.port,
-                                                           strict=False)
-        else:
-            return self._path.exit.exit_policy.can_exit_to(
-                                       address=request.addr, port=request.port)
-
+        return self._path.exit.descriptor.exit_policy.can_exit_to(port=request.port)
 
     def send(self, data, stream):
         '''Put a tuple of (data, stream_id) on this circuit's write_queue.
-        
+
         Called by stream's when they want to write data to this circuit.
 
         .. warning:: writeData() requires that *data* can fit in a single
@@ -145,10 +136,10 @@ class Circuit(object):
 
     def recv(self, cell):
         '''Put the incoming cell on this circuit's read_queue to be processed.
-        
+
         Called be a connection when it receives a cell addressed to this
         circuit.
-        
+
         :param cell cell: incoming cell that was received from the network
         '''
         self._read_queue.put(cell)
@@ -210,7 +201,7 @@ class Circuit(object):
         if len(self._streams) == self._max_streams:
             msg = ("Circuit {} tried to add a stream, but it's stream map was "
                    "full. This is a bug.".format(self.circuit_id))
-            raise RuntimeError(msg) 
+            raise RuntimeError(msg)
 
         assigned = False
         for _ in xrange(self._max_streams):
@@ -247,6 +238,7 @@ class Circuit(object):
 
         msg = ("Circuit {} sent a RelaySendMeCell for stream {}."
                .format(self.circuit_id, stream.stream_id))
+        logging.debug(msg)
 
     def destroyCircuitFromManager(self):
         '''Called by the circuit manager when it decides to destroy this
@@ -255,8 +247,9 @@ class Circuit(object):
         Send a destroy cell and notify this circuit's connection that this
         circuit is now closed.
         '''
-        msg = "Circuit {} destroyed by circuit manager."
-        logging.debug(msg.format(self.circuit_id))
+        msg = ("Circuit {} destroyed by circuit manager."
+               .format(self.circuit_id))
+        logging.debug(msg)
         self._sendDestroyCell()
         self._closeAllStreams()
         self._connection.removeCircuit(self)
@@ -269,8 +262,9 @@ class Circuit(object):
         object.  Do a 'hard' destroy and immediately close all associated
         streams.  Do not send a destroy cell.
         '''
-        msg = "Circuit {} destroyed by its connection."
-        logging.debug(msg.format(self.circuit_id))
+        msg = ("Circuit {} destroyed by its connection."
+               .format(self.circuit_id))
+        logging.debug(msg)
         self._closeCircuit()
 
     def _pollReadQueue(self):
@@ -348,9 +342,9 @@ class Circuit(object):
         try:
             cell, origin = crypto.decryptCell(cell, self._crypt_path)
         except Exception as e:
-            logging.debug("Circuit {} failed to decrypt an incoming cell. "
-                          "Reason: {}. Dropping cell."
-                          .format(self.circuit_id, e))
+            msg = ("Circuit {} failed to decrypt an incoming cell. Reason: {}"
+                   ". Dropping cell.".format(self.circuit_id, e))
+            logging.debug(msg)
             return
 
         if type(cell) not in BACKWARD_RELAY_CELL_TYPES:
@@ -392,7 +386,7 @@ class Circuit(object):
             2. Decrement this circuit's delivery window (which will
                automatically send a RelaySendMeCell if this circuit's
                deliver window is low enough).
-        
+
         :param oppy.cell.relay.RelayDataCell cell: relay data cell recieved
             from the network
         :param int origin: which node on the circuit's path this cell
@@ -404,8 +398,8 @@ class Circuit(object):
             self._streams[sid].recv(cell.rpayload)
             self._decDeliverWindow()
         except KeyError:
-            msg  = ("Circuit {} received a RelayDataCell for nonexistent "
-                    "stream {}. Dropping cell.".format(self.circuit_id, sid))
+            msg = ("Circuit {} received a RelayDataCell for nonexistent "
+                   "stream {}. Dropping cell.".format(self.circuit_id, sid))
             logging.debug(msg)
 
     def _processRelayEndCell(self, cell, origin):
@@ -431,8 +425,8 @@ class Circuit(object):
                        .format(self.circuit_id, sid, cell.reason))
                 logging.debug(msg)
         except KeyError:
-            msg  = ("Circuit {} received a RelayEndCell for nonexistent "
-                    "stream {}. Dropping cell.".format(self.circuit_id, sid))
+            msg = ("Circuit {} received a RelayEndCell for nonexistent "
+                   "stream {}. Dropping cell.".format(self.circuit_id, sid))
             logging.debug(msg)
 
     def _processRelayConnectedCell(self, cell, origin):
@@ -457,8 +451,9 @@ class Circuit(object):
             logging.debug(msg)
             return
 
-        logging.debug("Circuit {} received a RelayConnectedCell for "
-                      "stream {}".format(self.circuit_id, sid))
+        msg = ("Circuit {} received a RelayConnectedCell for stream {}"
+               .format(self.circuit_id, sid))
+        logging.debug(msg)
 
     def _processRelaySendMeCell(self, cell, origin):
         '''Called when this circuit receives a RelaySendMeCell.
@@ -542,7 +537,7 @@ class Circuit(object):
 
     def _decDeliverWindow(self):
         '''Decrement this circuit's deliver window.
-        
+
         Called when we deliver an incoming RelayDataCell's payload to
         a stream. If the delivery window is below the default threshold, send
         a RelaySendMeCell.

@@ -44,36 +44,18 @@ class CircuitTest(unittest.TestCase):
         self.circuit_ipv6 = Circuit(cm, ID, conn, CircuitType.IPv6,
                                     path, crypt_path)
 
-    # TODO: for all of these, construct an *Actual* exit policy object
-    #       to use
-    def test_canHandleRequest_ipv4_yes(self):
-        self.circuit._path.exit.exit_policy.can_exit_to.return_value = True
+    def test_canHandleRequets_port_yes(self):
+        self.circuit._path.exit.descriptor.exit_policy.can_exit_to = mock.Mock()
+        self.circuit._path.exit.descriptor.exit_policy.can_exit_to.return_value = True
+        self.circuit._state = CState.OPEN
         request = ExitRequest('\x01\xbb', addr=u'127.0.0.1')
         self.assertTrue(self.circuit.canHandleRequest(request))
 
-    def test_canHandleRequest_ipv6_yes(self):
-        self.circuit_ipv6._path.exit.exit_policy.can_exit_to.return_value = True
-        request = ExitRequest('\x01\xbb', addr=u'2001:db8::')
-        self.assertTrue(self.circuit_ipv6.canHandleRequest(request))
-
-    def test_canHandleRequest_host_yes(self):
-        self.circuit._path.exit.exit_policy.can_exit_to.return_value = True
-        request = ExitRequest('\x01\xbb', host='https://riseup.net')
-        self.assertTrue(self.circuit.canHandleRequest(request))
-
-    def test_canHandleRequest_ipv4_no(self):
-        self.circuit._path.exit.exit_policy.can_exit_to.return_value = False
+    def test_canHandleRequest_port_no(self):
+        self.circuit._path.exit.descriptor.exit_policy.can_exit_to = mock.Mock()
+        self.circuit._path.exit.descriptor.exit_policy.can_exit_to.return_value = False
+        self.circuit._state = CState.OPEN
         request = ExitRequest('\x01\xbb', addr=u'127.0.0.1')
-        self.assertFalse(self.circuit.canHandleRequest(request))
-
-    def test_canHandleRequest_ipv6_no(self):
-        self.circuit_ipv6._path.exit.exit_policy.can_exit_to.return_value = False
-        request = ExitRequest('\x01\xbb', addr=u'2001:db8::')
-        self.assertFalse(self.circuit_ipv6.canHandleRequest(request))
-
-    def test_canHandleRequest_host_no(self):
-        self.circuit._path.exit.exit_policy.can_exit_to.return_value = False
-        request = ExitRequest('\x01\xbb', host='https://riseup.net')
         self.assertFalse(self.circuit.canHandleRequest(request))
 
     def test_canHandleRequest_buffering_no(self):

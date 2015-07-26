@@ -13,9 +13,9 @@ import oppy.path.path as path
 from oppy.cell.fixedlen import Create2Cell, Created2Cell, DestroyCell
 from oppy.cell.relay import RelayExtend2Cell, RelayExtended2Cell
 from oppy.cell.util import LinkSpecifier
-from oppy.circuit.circuit import CircuitType, Circuit
+from oppy.circuit.circuit import Circuit
+from oppy.circuit.definitions import CircuitType
 from oppy.crypto.ntorhandshake import NTorHandshake
-from oppy.path.path import getPath
 
 
 # Major TODO's:
@@ -38,6 +38,7 @@ class CircuitBuildTask(object):
         self.circuit_id = _id
         self.circuit_type = circuit_type
         self.request = request
+        self._hs = None
         self._path = None
         self._conn = None
         self._crypt_path = []
@@ -78,13 +79,7 @@ class CircuitBuildTask(object):
             else:
                 return self.circuit_type == CircuitType.IPv6
         else:
-            if request.is_host:
-                return self._path.exit.exit_policy.can_exit_to(
-                                                            port=request.port, 
-                                                            strict=False)
-            else:
-                return self._path.exit.exit_policy.can_exit_to(
-                                       address=request.addr, port=request.port)
+            return self._path.exit.microdescriptor.exit_policy.can_exit_to(port=request.port)
 
     def recv(self, cell):
         self._read_queue.put(cell)
@@ -99,27 +94,28 @@ class CircuitBuildTask(object):
         msg = msg.format(self.circuit_id)
         self._current_task.errback(Failure(Exception(msg)))
 
-    def _recvCell(self, result):
+    def _recvCell(self, _):
         self._current_task = self._read_queue.get()
         return self._current_task
 
     # NOTE: no errbacks are added because exceptions thrown in this inner
     #       deferred will fire the errback added to the outer deferred
-    def _build(self, path):
-        self._path = path
-        d = self._getConnection(path.entry)
+    def _build(self, cpath):
+        self._path = cpath
+        d = self._getConnection(self._path.entry)
         self._current_task = d
-        d.addCallback(self._sendCreate2Cell, path.entry)
+        d.addCallback(self._sendCreate2Cell, self._path.entry)
         d.addCallback(self._recvCell)
-        d.addCallback(self._deriveCreate2CellSecrets, path.entry)
-        for node in path[1:]:
-            d.addCallback(self._sendExtend2Cell, node)
+        d.addCallback(self._deriveCreate2CellSecrets, self._path.entry)
+        for path_node in self._path[1:]:
+            d.addCallback(self._sendExtend2Cell, path_node)
             d.addCallback(self._recvCell)
-            d.addCallback(self._deriveExtend2CellSecrets, node)
+            d.addCallback(self._deriveExtend2CellSecrets, path_node)
         return d
 
-    def _getConnection(self, node):
-        d = self._connection_manager.getConnection(node)
+    def _getConnection(self, path_node):
+
+        d = self._connection_manager.getConnection(path_node.router_status_entry)
         self._current_task = d
         def addCirc(res):
             self._conn = res
@@ -128,19 +124,21 @@ class CircuitBuildTask(object):
         d.addCallback(addCirc)
         return d
 
-    def _sendCreate2Cell(self, conn, node):
-        self._hs = NTorHandshake(node)
+    def _sendCreate2Cell(self, _, path_node):
+        self._hs = NTorHandshake(path_node.microdescriptor)
         onion_skin = self._hs.createOnionSkin()
         create2 = Create2Cell.make(self.circuit_id, hdata=onion_skin)
         self._conn.send(create2)
 
-    def _deriveCreate2CellSecrets(self, response, node):
+    def _deriveCreate2CellSecrets(self, response, path_node):
         if isinstance(response, DestroyCell):
-            msg = "Destroy cell received from {}.".format(node.fingerprint)
+            msg = ("DestroyCell received from {}."
+                   .format(path_node.router_status_entry.fingerprint))
             raise ValueError(msg)
         if not isinstance(response, Created2Cell):
-            msg = "Unexpected cell {} received from {}."
-            msg = msg.format(response, node.fingerprint)
+            msg = ("Unexpected cell {} received from {}."
+                   .format(response,
+                           path_node.router_status_entry.fingerprint))
             destroy = DestroyCell.make(self.circuit_id)
             self._conn.send(destroy)
             raise ValueError(msg)
@@ -148,9 +146,10 @@ class CircuitBuildTask(object):
         self._crypt_path.append(self._hs.deriveRelayCrypto(response))
         self._hs = None
 
-    def _sendExtend2Cell(self, result, node):
-        lspecs = [LinkSpecifier(node), LinkSpecifier(node, legacy=True)]
-        self._hs = NTorHandshake(node)
+    def _sendExtend2Cell(self, _, path_node):
+        lspecs = [LinkSpecifier(path_node),
+                  LinkSpecifier(path_node, legacy=True)]
+        self._hs = NTorHandshake(path_node.microdescriptor)
         onion_skin = self._hs.createOnionSkin()
         extend2 = RelayExtend2Cell.make(self.circuit_id, nspec=len(lspecs),
                                         lspecs=lspecs, hdata=onion_skin)
@@ -158,16 +157,19 @@ class CircuitBuildTask(object):
                                         early=True)
         self._conn.send(crypt_cell)
 
-    def _deriveExtend2CellSecrets(self, response, node):
+    def _deriveExtend2CellSecrets(self, response, path_node):
         if isinstance(response, DestroyCell):
-            msg = "Destroy cell received from {} on pending circuit {}."
-            raise ValueError(msg.format(node.fingerprint, self.circuit_id))
+            msg = ("Destroy cell received from {} on pending circuit {}."
+                   .format(path_node.router_status_entry.fingerprint,
+                   self.circuit_id))
+            raise ValueError(msg)
 
-        cell, origin = crypto.decryptCell(response, self._crypt_path)
+        cell, _ = crypto.decryptCell(response, self._crypt_path)
 
         if not isinstance(cell, RelayExtended2Cell):
-            msg = "Circuit {} received an unexpected cell {}."
-            msg = msg.format(self.circuit_id, cell)
+            msg = ("CircuitBuildTask {} received an unexpected cell: {}. "
+                   "Destroying the circuit."
+                   .format(self.circuit_id, type(cell)))
             destroy = DestroyCell.make(self.circuit_id)
             self._conn.send(destroy)
             raise ValueError(msg)
@@ -175,15 +177,16 @@ class CircuitBuildTask(object):
         self._crypt_path.append(self._hs.deriveRelayCrypto(cell))
         self._hs = None
 
-    def _buildSucceeded(self, result):
+    def _buildSucceeded(self, _):
         circuit = Circuit(self._circuit_manager, self.circuit_id, self._conn,
                           self.circuit_type, self._path, self._crypt_path)
         self._conn.addCircuit(circuit)
         self._circuit_manager.circuitOpened(circuit)
 
     def _buildFailed(self, reason):
-        msg = "Pending circuit {} failed. Reason: {}"
-        logging.debug(msg.format(self.circuit_id, reason))
+        msg = ("Pending circuit {} failed. Reason: {}."
+               .format(self.circuit_id, reason))
+        logging.debug(msg)
         if self._conn is not None:
             self._conn.removeCircuit(self.circuit_id)
         self._circuit_manager.circuitDestroyed(self)

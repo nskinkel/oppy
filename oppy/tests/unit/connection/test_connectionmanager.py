@@ -7,7 +7,7 @@ from OpenSSL import SSL
 from oppy.connection import connectionmanager
 
 
-class ConnectionTest(unittest.TestCase):
+class ConnectionManagerTest(unittest.TestCase):
 
     def setUp(self):
         self.cm = connectionmanager.ConnectionManager()
@@ -123,8 +123,8 @@ class ConnectionTest(unittest.TestCase):
         mock_cbt = mock.Mock()
         mock_transport = mock.Mock()
         mock_cbt.transport = mock_transport
-        mock_cbt.relay = mock.Mock()
-        mock_cbt.relay.fingerprint = 'test'
+        mock_cbt.micro_status_entry = mock.Mock()
+        mock_cbt.micro_status_entry.fingerprint = 'test'
         mock_request_1 = mock.Mock()
         mock_request_1.callback = mock.Mock()
         mock_request_2 = mock.Mock()
@@ -148,8 +148,8 @@ class ConnectionTest(unittest.TestCase):
     @mock.patch('oppy.connection.connectionmanager.logging', autospec=True)
     def test_connectionTaskSucceeded_no_reference(self, mock_logging):
         mock_cbt = mock.Mock()
-        mock_cbt.relay = mock.Mock()
-        mock_cbt.relay.fingerprint = 'test'
+        mock_cbt.micro_status_entry = mock.Mock()
+        mock_cbt.micro_status_entry.fingerprint = 'test'
 
         self.cm.connectionTaskSucceeded(mock_cbt)
 
@@ -158,8 +158,8 @@ class ConnectionTest(unittest.TestCase):
 
     def test_connectionTaskFailed(self):
         mock_cbt = mock.Mock()
-        mock_cbt.relay = mock.Mock()
-        mock_cbt.relay.fingerprint = 'test'
+        mock_cbt.micro_status_entry = mock.Mock()
+        mock_cbt.micro_status_entry.fingerprint = 'test'
         mock_request_1 = mock.Mock()
         mock_request_1.errback = mock.Mock()
         mock_request_2 = mock.Mock()
@@ -176,8 +176,8 @@ class ConnectionTest(unittest.TestCase):
     @mock.patch('oppy.connection.connectionmanager.logging', autospec=True)
     def test_connectionTaskFailed_no_reference(self, mock_logging):
         mock_cbt = mock.Mock()
-        mock_cbt.relay = mock.Mock()
-        mock_cbt.relay.fingerprint = 'test'
+        mock_cbt.micro_status_entry = mock.Mock()
+        mock_cbt.micro_status_entry.fingerprint = 'test'
 
         self.cm.connectionTaskFailed(mock_cbt, 'reason')
 
@@ -185,8 +185,8 @@ class ConnectionTest(unittest.TestCase):
 
     def test_removeConnection(self):
         mock_connection = mock.Mock()
-        mock_connection.relay = mock.Mock()
-        mock_connection.relay.fingerprint = 'test'
+        mock_connection.micro_status_entry = mock.Mock()
+        mock_connection.micro_status_entry.fingerprint = 'test'
 
         self.cm._connection_dict['test'] = mock_connection
 
@@ -198,8 +198,8 @@ class ConnectionTest(unittest.TestCase):
     @mock.patch('oppy.connection.connectionmanager.logging', autospec=True)
     def test_removeConnection_no_reference(self, mock_logging):
         mock_connection = mock.Mock()
-        mock_connection.relay = mock.Mock()
-        mock_connection.relay.fingerprint = 'test'
+        mock_connection.micro_status_entry = mock.Mock()
+        mock_connection.micro_status_entry.fingerprint = 'test'
 
         self.cm.removeConnection(mock_connection)
         self.assertEqual(mock_logging.debug.call_count, 1)

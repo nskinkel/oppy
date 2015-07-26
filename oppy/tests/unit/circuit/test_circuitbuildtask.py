@@ -64,17 +64,16 @@ class CircuitBuildTaskTest(unittest.TestCase):
         mock_request.port = mock_port
         path_mock = mock.Mock()
         mock_exit = mock.Mock()
-        mock_exit.exit_policy = mock.Mock()
-        mock_exit.exit_policy.can_exit_to = mock.Mock()
+        mock_exit.microdescriptor = mock.Mock()
+        mock_exit.microdescriptor.exit_policy = mock.Mock()
+        mock_exit.microdescriptor.exit_policy.can_exit_to = mock.Mock()
         path_mock.exit = mock_exit
         self.circuit._path = path_mock
         self.circuit.circuit_type = CircuitType.IPv4
 
         self.circuit.canHandleRequest(mock_request)
 
-        mock_exit.exit_policy.can_exit_to.assert_called_once_with(
-                                                       port=mock_request.port,
-                                                       strict=False)
+        mock_exit.microdescriptor.exit_policy.can_exit_to.assert_called_once_with(port=mock_request.port)
 
     def test_canHandleRequest_ip_path(self):
         mock_request = mock.Mock()
@@ -85,17 +84,16 @@ class CircuitBuildTaskTest(unittest.TestCase):
         mock_request.addr = mock_addr
         path_mock = mock.Mock()
         mock_exit = mock.Mock()
-        mock_exit.exit_policy = mock.Mock()
-        mock_exit.exit_policy.can_exit_to = mock.Mock()
+        mock_exit.microdescriptor = mock.Mock()
+        mock_exit.microdescriptor.exit_policy = mock.Mock()
+        mock_exit.microdescriptor.exit_policy.can_exit_to = mock.Mock()
         path_mock.exit = mock_exit
         self.circuit._path = path_mock
         self.circuit.circuit_type = CircuitType.IPv4
 
         self.circuit.canHandleRequest(mock_request)
 
-        mock_exit.exit_policy.can_exit_to.assert_called_once_with(
-                                                       port=mock_request.port,
-                                                    address=mock_request.addr)
+        mock_exit.microdescriptor.exit_policy.can_exit_to.assert_called_once_with(port=mock_request.port)
 
     def test_recv(self):
         cell = mock.Mock()

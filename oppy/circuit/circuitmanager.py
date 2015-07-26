@@ -31,9 +31,9 @@ from collections import namedtuple
 
 from twisted.internet import defer
 
-from oppy.circuit.circuit import Circuit, CircuitType
 from oppy.circuit.circuitbuildtask import CircuitBuildTask
 from oppy.circuit.definitions import (
+    CircuitType,
     DEFAULT_OPEN_IPv4,
     DEFAULT_OPEN_IPv6,
     MAX_STREAMS_V3,
@@ -199,9 +199,10 @@ class CircuitManager(object):
                 msg = "Destroyed open circuit {}.".format(cid)
                 logging.debug(msg)
             except KeyError:
-                logging.debug("Circuit manager was notified that circuit {} "
-                              "was destroyed, but manager has no reference to "
-                              "that circuit.".format(cid))
+                msg = ("Circuit manager was notified that circuit {} was "
+                       "destroyed, but manager has no reference to that "
+                       "circuit.".format(cid))
+                logging.debug(msg)
                 return
 
         self._assignAllPossiblePendingRequests()
@@ -227,14 +228,16 @@ class CircuitManager(object):
         :param oppy.circuit.circuit.Circuit circuit: circuit that
             has just opened.
         '''
-        msg = "Circuit manager notified that circuit {} opened."
-        logging.debug(msg.format(circuit.circuit_id))
+        msg = ("Circuit manager notified that circuit {} opened."
+               .format(circuit.circuit_id))
+        logging.debug(msg)
 
         try:
             del self._circuit_build_task_dict[circuit.circuit_id]
         except KeyError:
-            logging.debug("Circuit manager has no reference to circuit {}."
-                          .format(circuit.circuit_id))
+            msg = ("Circuit manager has no reference to circuit {}."
+                   .format(circuit.circuit_id))
+            logging.debug(msg)
             return
 
         self._open_circuit_dict[circuit.circuit_id] = circuit
@@ -306,8 +309,9 @@ class CircuitManager(object):
         for pending_stream in self._pending_stream_list[:]:
             request = pending_stream.stream.request
             if circuit.canHandleRequest(request):
-                msg = "Assigning pending request to opened circuit {}."
-                logging.debug(msg.format(circuit.circuit_id))
+                msg = ("Assigning pending request to opened circuit {}."
+                       .format(circuit.circuit_id))
+                logging.debug(msg)
                 pending_stream.deferred.callback(circuit)
                 self._pending_stream_list.remove(pending_stream)
 
@@ -350,7 +354,7 @@ class CircuitManager(object):
         :returns: **int** number of pending IPv4 circuits.
         '''
         return len([i for i in self._circuit_build_task_dict.values()
-                   if i.circuit_type == CircuitType.IPv4])
+                    if i.circuit_type == CircuitType.IPv4])
 
     def _pendingIPv6Count(self):
         '''Return the number of pending IPv6 circuits.

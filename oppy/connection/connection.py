@@ -29,11 +29,9 @@ class Connection(Protocol):
 
     def __init__(self, connection_manager, connection_task):
         '''
-        :param stem.descriptor.server_descriptor.RelayDescriptor relay:
-            relay we should create a connection to
         '''
         self._connection_manager = connection_manager
-        self.relay = connection_task.relay
+        self.micro_status_entry = connection_task.micro_status_entry
         self._circuit_dict = {}
         self._buffer = ''
         self._closed = False
@@ -74,10 +72,11 @@ class Connection(Protocol):
         try:
             self._circuit_dict[cell.header.circ_id].recv(cell)
         except KeyError:
-            logging.debug("Connection to {} received a {} cell for "
-                          "nonexistent circuit {}. Dropping cell."
-                          .format(self.relay.fingerprint, type(cell), 
-                                  cell.header.circ_id))
+            msg = ("Connection to {} received a {} cell for nonexistent "
+                   "circuit {}. Dropping cell."
+                   .format(self.micro_status_entry.fingerprint, type(cell),
+                           cell.header.circ_id))
+            logging.debug(msg)
 
     def addCircuit(self, circuit):
         '''Add new a new circuit to the circuit map for this connection.
@@ -85,17 +84,15 @@ class Connection(Protocol):
         :param oppy.circuit.circuit.Circuit circuit: circuit to add to this
             connection's circuit map
         '''
-        # XXX this logs twice, once for task + once for finished connection
-        # XXX don't do that
-        logging.debug("Connection to {} added circuit {}."
-                      .format(self.relay.fingerprint, circuit.circuit_id))
         self._circuit_dict[circuit.circuit_id] = circuit
 
     def closeConnection(self):
         '''Close this connection and all associated circuits; notify the
         connection manager.
         '''
-        logging.debug("Closing connection to {}.".format(self.relay.address))
+        msg = ("Closing connection to {}."
+              .format(self.micro_status_entry.address))
+        logging.debug(msg)
         self._closed = True
         self._destroyAllCircuits()
         self._connection_manager.removeConnection(self)
@@ -111,8 +108,9 @@ class Connection(Protocol):
             return
 
         self._closed = True
-        logging.warning("Connection to {} lost. Reason: {}."
-                        .format(self.relay.fingerprint, reason))
+        msg = ("Connection to {} lost. Reason: {}."
+               .format(self.micro_status_entry.fingerprint, reason))
+        logging.debug(msg)
         self._destroyAllCircuits()
         self._connection_manager.removeConnection(self)
 
@@ -135,10 +133,11 @@ class Connection(Protocol):
         try:
             del self._circuit_dict[circuit.circuit_id]
         except KeyError:
-            logging.debug("Connection to {} notified circuit {} was "
-                          "destroyed, but the connection has no reference "
-                          "to that circuit.".format(self.relay.fingerprint,
-                                                    circuit.circuit_id))
+            msg = ("Connection to {} notified circuit {} was destroyed, but "
+                   "the connection has no reference to that circuit."
+                   .format(self.micro_status_entry.fingerprint,
+                           circuit.circuit_id))
+            logging.debug(msg)
             return
 
         if len(self._circuit_dict) == 0:

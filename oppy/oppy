@@ -11,11 +11,6 @@ from twisted.internet import reactor
 from twisted.internet.endpoints import TCP4ServerEndpoint
 
 
-# Note: we do *not* use Twisted's log module to avoid logging
-#       addresses connected to (e.g. when retrieving directory information)
-#       and start/end times of critical events (like circuit handshakes)
-#       unless we explicitly choose to
-
 DEFAULT_SOCKS_PORT = 10050
 MIN_PORT = 1
 MAX_PORT = 65535
@@ -51,27 +46,30 @@ oppyLogger.addHandler(logger)
 
 try:
     socks_port = int(args.SOCKS_port)
-    if not (MIN_PORT <= socks_port <= MAX_PORT):
+    if not MIN_PORT <= socks_port <= MAX_PORT:
         raise ValueError
     if socks_port <= PRIVILEGED_PORTS_MAX:
         msg = 'It is not recommended to run oppy as a privileged user or on a '
         msg += 'privileged port.'
         logging.warning(msg)
 except ValueError:
-    logging.error('Invalid SOCKS port {0}.'.format(args.SOCKS_port))
+    msg = ('Invalid SOCKS port {}. Using default {}.'
+           .format(args.SOCKS_port, DEFAULT_SOCKS_PORT))
     socks_port = DEFAULT_SOCKS_PORT
 
-logging.info('oppy will listen for connections on port {}.'.format(socks_port))
+msg = 'oppy will listen for connections on port {}.'.format(socks_port)
+logging.info(msg)
 logging.info('But we need to build some circuits first...')
 logging.info('Retrieving network status information.')
 
-import oppy.shared
+from oppy.netstatus.netstatus import NetStatus
+netstatus = NetStatus()
 
 from oppy.connection.connectionmanager import ConnectionManager
 connection_manager = ConnectionManager()
 
 from oppy.circuit.circuitmanager import CircuitManager
-circuit_manager = CircuitManager(connection_manager, oppy.shared.net_status)
+circuit_manager = CircuitManager(connection_manager, netstatus)
 
 # catch CTRL-C to shutdown properly
 from oppy.util.tools import shutdown

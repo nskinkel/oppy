@@ -23,7 +23,7 @@ from oppy.connection.definitions import V3_CIPHER_STRING
 
 
 class TLSClientContextFactory(ClientContextFactory):
-    
+
     isClient = 1
     method = SSL.TLSv1_METHOD
     _contextFactory = SSL.Context
@@ -43,8 +43,8 @@ class ConnectionManager(object):
         self._connection_dict = {}
         self._pending_request_dict = {}
 
-    # TODO: fix docs
-    def getConnection(self, relay):
+    # TODO: fix docs (change relay to router_status_entry)
+    def getConnection(self, micro_status_entry):
         '''Return a deferred which will fire (if connection attempt is
         successful) with a Connection Protocol made to *relay*.
 
@@ -66,7 +66,7 @@ class ConnectionManager(object):
                appropriate callback and errback. If the request is successful,
                callback all pending requests with the open connection when
                it opens; errback all pending requests on failure.
-        
+
         :param stem.descriptor.server_descriptor.RelayDescriptor relay:
             relay to make a TLS connection to
         :returns: **twisted.internet.defer.Deferred** which, on success, will
@@ -76,24 +76,24 @@ class ConnectionManager(object):
         XXX raises:
         '''
         from twisted.internet import reactor
-        
+
+        m = micro_status_entry
+
         d = defer.Deferred()
-        
-        if relay.fingerprint in self._connection_dict:
-            d.callback(self._connection_dict[relay.fingerprint])
-        elif relay.fingerprint in self._pending_request_dict:
-            self._pending_request_dict[relay.fingerprint].append(d)
+
+        if m.fingerprint in self._connection_dict:
+            d.callback(self._connection_dict[m.fingerprint])
+        elif m.fingerprint in self._pending_request_dict:
+            self._pending_request_dict[m.fingerprint].append(d)
         else:
             try:
-                f = endpoints.connectProtocol(
-                        endpoints.SSL4ClientEndpoint(reactor, relay.address,
-                                                     relay.or_port,
-                                                     TLSClientContextFactory()),
-                        ConnectionBuildTask(self, relay))
-                f.addErrback(self._initialConnectionFailed, relay.fingerprint)
-                self._pending_request_dict[relay.fingerprint] = [d]
+                f = endpoints.connectProtocol(endpoints.SSL4ClientEndpoint(
+                    reactor, m.address, m.or_port, TLSClientContextFactory()),
+                                              ConnectionBuildTask(self, m))
+                f.addErrback(self._initialConnectionFailed, m.fingerprint)
+                self._pending_request_dict[m.fingerprint] = [d]
             except Exception as e:
-                self._initialConnectionFailed(e, relay.fingerprint)
+                self._initialConnectionFailed(e, m.fingerprint)
 
         return d
 
@@ -106,7 +106,7 @@ class ConnectionManager(object):
         '''For every pending request for this connection, callback the request
         deferred with this open connection, then remove this connection
         from the pending map and add to the connection map.
-        
+
         Called when the TLS connection to the IP of relay with
         *fingerprint* opens successfully.
 
@@ -114,7 +114,7 @@ class ConnectionManager(object):
             opened connection
         :param str fingerprint: fingerprint of relay we have connected to
         '''
-        fprint = connection_task.relay.fingerprint
+        fprint = connection_task.micro_status_entry.fingerprint
 
         if fprint not in self._pending_request_dict:
             msg = ("ConnectionManager notified that a connection to {} "
@@ -148,7 +148,7 @@ class ConnectionManager(object):
             failed to
         '''
         # XXX update what args we're calling the errback here with
-        fprint = fprint or connection_task.relay.fingerprint
+        fprint = fprint or connection_task.micro_status_entry.fingerprint
         try:
             for request in self._pending_request_dict[fprint]:
                 request.errback(reason)
@@ -165,16 +165,16 @@ class ConnectionManager(object):
 
         :param str fingerprint: fingerprint of connection to remove
         '''
-        fprint = connection.relay.fingerprint
+        fprint = connection.micro_status_entry.fingerprint
         try:
-            del self._connection_dict[connection.relay.fingerprint]
-            logging.debug("ConnectionManager removed a connection to {}"
-                          .format(fprint))
+            del self._connection_dict[connection.micro_status_entry.fingerprint]
+            msg = "ConnectionManager removed a connection to {}".format(fprint)
+            logging.debug(msg)
         except KeyError:
-            logging.debug("ConnectionManager received a request to remove a "
-                          "connection to {}, but CircuitManager has no "
-                          "reference to that connection."
-                          .format(fprint))
+            msg = ("ConnectionManager received a request to remove connection "
+                   "to {}, but CircuitManager has no reference to that "
+                   "connection.".format(fprint))
+            logging.debug(msg)
 
     def shouldDestroyConnection(self, connection):
         '''Return **True** if ConnectionPool thinks we should destroy the

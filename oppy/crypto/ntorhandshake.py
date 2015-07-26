@@ -30,7 +30,7 @@ from nacl.public import PrivateKey, PublicKey
 from oppy.crypto import util
 from oppy.crypto.exceptions import KeyDerivationFailed
 from oppy.crypto.relaycrypto import RelayCrypto
-from oppy.util import tools
+from oppy.util.tools import decodeMicrodescriptorIdentifier
 
 
 PROTOID     = "ntor-curve25519-sha256-1"
@@ -48,13 +48,13 @@ NTOR_ONIONSKIN_LEN      = (2 * CURVE25519_PUBKEY_LEN + DIGEST_LEN)
 
 class NTorHandshake(object):
 
-    def __init__(self, relay):
+    def __init__(self, microdescriptor):
         '''
         :param stem.descriptor.server_descriptor.RelayDescriptor relay:
             the relay that we're doing an ntor handshake with
         '''
-        self._signing_key = tools.signingKeyToSHA1(relay.signing_key)
-        self._ntor_onion_key = base64.b64decode(relay.ntor_onion_key)
+        self._relay_identity = decodeMicrodescriptorIdentifier(microdescriptor)
+        self._ntor_onion_key = base64.b64decode(microdescriptor.ntor_onion_key)
         self._secret_key = PrivateKey.generate()
         self._public_key = self._secret_key.public_key
         self.is_bad = False
@@ -66,7 +66,7 @@ class NTorHandshake(object):
 
         :returns: **str** raw byte string for this *onion skin*
         '''
-        b  = self._signing_key
+        b  = self._relay_identity
         b += self._ntor_onion_key
         b += bytes(self._public_key)
 
@@ -142,7 +142,7 @@ class NTorHandshake(object):
         :returns: **str** auth_input
         '''
         b  = verify
-        b += self._signing_key
+        b += self._relay_identity
         b += self._ntor_onion_key
         b += relay_pubkey
         b += bytes(self._public_key)
@@ -161,7 +161,7 @@ class NTorHandshake(object):
         '''
         b  = self._scalarMult(relay_pubkey)
         b += self._scalarMult(self._ntor_onion_key)
-        b += self._signing_key
+        b += self._relay_identity
         b += self._ntor_onion_key
         b += bytes(self._public_key)
         b += relay_pubkey
