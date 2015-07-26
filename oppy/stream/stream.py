@@ -50,38 +50,11 @@ class Stream(object):
         self._deliver_window = STREAM_WINDOW_INIT
         self._package_window = STREAM_WINDOW_INIT
         self.circuit = None
+        # set this flag if SOCKS closes our connection before the circuit
+        # is done building
+        self._closed = False
         self._circuit_request = circuit_manager.getOpenCircuit(self)
         self._circuit_request.addCallback(self._registerNewStream)
-
-    def _registerNewStream(self, circuit):
-        '''Register this stream with it's circuit, initiate a conenction
-        request, and begin listening for data from the network.
-
-        Called when this stream receives a suitable open circuit.
-
-        :param oppy.circuit.circuit.Circuit circuit: open circuit suitable
-            for use on this stream
-        '''
-        self.circuit = circuit
-        self._circuit_request = None
-        # notify circuit it has a new stream
-        # NOTE: circuit sets this stream's stream_id
-        self.circuit.addStreamAndSetStreamID(self)
-        # tell the circuit to setup this stream (i.e. send a RELAY_BEGIN cell)
-        self.circuit.beginStream(self)
-        # start listening for incoming cells from our circuit
-        self._pollReadQueue()
-
-    @staticmethod
-    def _chunkRelayData(data):
-        '''Split *data* into chunks that can fit inside a RelayData cell.
-
-        :param str data: data to split
-        :returns **list, str** list of pieces of data split into sizes that
-            fit into a RelayData cell
-        '''
-        LEN = MAX_RPAYLOAD_LEN
-        return [data[i:i + LEN] for i in xrange(0, len(data), LEN)]
 
     def recv(self, data):
         '''Put data received from the network on this stream's read queue.
@@ -104,9 +77,89 @@ class Stream(object):
         :param str data: data passed in from this stream's attached SOCKS
             protocol to write to this stream's circuit
         '''
-        chunks = Stream._chunkRelayData(data)
+        chunks = _chunkRelayData(data)
         for chunk in chunks:
             self._write_queue.put(chunk)
+
+    def incrementPackageWindow(self):
+        '''Increment this stream's package window and, if the package window
+        is now above zero and this stream was in a buffering state, begin
+        listening for local data again.
+
+        Called by the attached circuit when it receives a sendme cell
+        for this stream.
+        '''
+        self._package_window += STREAM_WINDOW_SIZE
+        # if we were buffering, we're now free to send data again
+        if self._write_deferred is None and self._package_window > 0:
+            self._pollWriteQueue()
+
+    def streamConnected(self):
+        '''Begin listening for local data from the attached SOCKS protocol
+        to write to this stream's circuit.
+
+        Called when the attached circuit receives a RelayConnected cell for
+        this stream's RelayBegin request.
+        '''
+        self._pollWriteQueue()
+
+    def closeFromCircuit(self):
+        '''Called when this stream is closed by the circuit.
+
+        This can be caused by receiving a RelayEnd cell, the circuit being
+        torn down, or the connection going down. We do not need to send a
+        RelayEnd cell ourselves if the circuit closed this stream.
+
+        Notify any associated SOCKS protocols and let circuit know this stream
+        has closed.
+        '''
+        msg = ("Stream {} closing from circuit {}."
+               .format(self.stream_id, self.circuit.circuit_id))
+        logging.debug(msg)
+        self._closed = True
+        self.socks.closeFromStream()
+
+    # TODO: fix docs
+    def closeFromSOCKS(self):
+        '''Called when the attached SOCKS protocol object is done with this
+        stream.
+
+        Request that circuit send a RelayEnd cell on our behalf and notify
+        circuit we're now closed.
+        '''
+        if self.circuit is not None:
+            msg = ("Stream {} closing on circuit {} from SOCKS."
+                   .format(self.stream_id, self.circuit.circuit_id))
+            logging.debug(msg)
+            self.circuit.removeStream(self)
+        else:
+            logging.debug("Stream closed before circuit build task completes.")
+
+        self._closed = True
+
+    def _registerNewStream(self, circuit):
+        '''Register this stream with it's circuit, initiate a conenction
+        request, and begin listening for data from the network.
+
+        Called when this stream receives a suitable open circuit.
+
+        :param oppy.circuit.circuit.Circuit circuit: open circuit suitable
+            for use on this stream
+        '''
+        # don't do anything if the client closed the connection before the
+        # circuit was done building
+        if self._closed is True:
+            return
+
+        self.circuit = circuit
+        self._circuit_request = None
+        # notify circuit it has a new stream
+        # NOTE: circuit sets this stream's stream_id
+        self.circuit.addStreamAndSetStreamID(self)
+        # tell the circuit to setup this stream (i.e. send a RELAY_BEGIN cell)
+        self.circuit.beginStream(self)
+        # start listening for incoming cells from our circuit
+        self._pollReadQueue()
 
     def _pollWriteQueue(self):
         '''Pull a chunk of data from this stream's write queue and, when the
@@ -172,56 +225,13 @@ class Stream(object):
         else:
             self._write_deferred = None
 
-    def incrementPackageWindow(self):
-        '''Increment this stream's package window and, if the package window
-        is now above zero and this stream was in a buffering state, begin
-        listening for local data again.
 
-        Called by the attached circuit when it receives a sendme cell
-        for this stream.
-        '''
-        self._package_window += STREAM_WINDOW_SIZE
-        # if we were buffering, we're now free to send data again
-        if self._write_deferred is None and self._package_window > 0:
-            self._pollWriteQueue()
+def _chunkRelayData(data):
+    '''Split *data* into chunks that can fit inside a RelayData cell.
 
-    def streamConnected(self):
-        '''Begin listening for local data from the attached SOCKS protocol
-        to write to this stream's circuit.
-
-        Called when the attached circuit receives a RelayConnected cell for
-        this stream's RelayBegin request.
-        '''
-        self._pollWriteQueue()
-
-    def closeFromCircuit(self):
-        '''Called when this stream is closed by the circuit.
-
-        This can be caused by receiving a RelayEnd cell, the circuit being
-        torn down, or the connection going down. We do not need to send a
-        RelayEnd cell ourselves if the circuit closed this stream.
-
-        Notify any associated SOCKS protocols and let circuit know this stream
-        has closed.
-        '''
-        msg = "Stream {} closing from circuit {}"
-        msg = msg.format(self.stream_id, self.circuit.circuit_id)
-        logging.debug(msg)
-        self.socks.closeFromStream()
-
-    # TODO: fix docs
-    def closeFromSOCKS(self):
-        '''Called when the attached SOCKS protocol object is done with this
-        stream.
-
-        Request that circuit send a RelayEnd cell on our behalf and notify
-        circuit we're now closed.
-        '''
-        msg = "Stream id {} ".format(self.stream_id)
-        if self.circuit is not None:
-            msg = msg + "on circuit {} closing from SOCKS."
-            msg = msg.format(self.circuit.circuit_id)
-            self.circuit.removeStream(self)
-        else:
-            msg = msg + "on unassigned circuit closing from SOCKS."
-        logging.debug(msg)
+    :param str data: data to split
+    :returns **list, str** list of pieces of data split into sizes that
+        fit into a RelayData cell
+    '''
+    LEN = MAX_RPAYLOAD_LEN
+    return [data[i:i + LEN] for i in xrange(0, len(data), LEN)]
