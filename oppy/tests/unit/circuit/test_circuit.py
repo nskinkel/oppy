@@ -52,8 +52,8 @@ class CircuitTest(unittest.TestCase):
         self.assertTrue(self.circuit.canHandleRequest(request))
 
     def test_canHandleRequest_port_no(self):
-        self.circuit._path.exit.descriptor.exit_policy.can_exit_to = mock.Mock()
-        self.circuit._path.exit.descriptor.exit_policy.can_exit_to.return_value = False
+        self.circuit._path.exit.microdescriptor.exit_policy.can_exit_to = mock.Mock()
+        self.circuit._path.exit.microdescriptor.exit_policy.can_exit_to.return_value = False
         self.circuit._state = CState.OPEN
         request = ExitRequest('\x01\xbb', addr=u'127.0.0.1')
         self.assertFalse(self.circuit.canHandleRequest(request))
