@@ -472,30 +472,35 @@ class CircuitBuildTaskTest(unittest.TestCase):
         self.assertEqual(conn, self.successResultOf(ret_val))
 
     # TODO: make this test better; it's kinda shitty.
-    @mock.patch('oppy.circuit.circuitbuildtask.NTorHandshake', autospec=True)
+    @mock.patch('oppy.circuit.circuitbuildtask.ntor.createOnionSkin',
+        autospec=True)
     @mock.patch('oppy.circuit.circuitbuildtask.Create2Cell', autospec=True)
     @mock.patch('oppy.connection.connection.Connection', autospec=True)
-    def test_sendCreate2Cell(self, conn, c2c, nths):
+    @mock.patch('oppy.circuit.circuitbuildtask.ntor.NTorState',
+        return_value='test')
+    def test_sendCreate2Cell(self, nts, conn, c2c, nths):
         create2 = mock.Mock()
         c2c.make.return_value = create2
         self.circuit._conn = conn
 
         self.circuit._sendCreate2Cell(conn, mock.Mock())
 
-        self.assertTrue(self.circuit._hs.createOnionSkin.called)
+        self.assertTrue(nths.called)
         self.assertTrue(c2c.make.called)
         self.circuit._conn.send.assert_called_with(create2)
 
-    def test_deriveCreate2CellSecrets(self):
-        self.circuit._hs = mock.Mock()
-        self.circuit._hs.deriveRelayCrypto.return_value = 'test'
+    @mock.patch('oppy.circuit.circuitbuildtask.ntor.deriveRelayCrypto',
+        return_value='test')
+    def test_deriveCreate2CellSecrets(self, mock_drc):
+        self.circuit._hs_state = 'hs_state'
 
         cell = Created2Cell.make(ID, hdata='\x00'*84)
 
         self.circuit._deriveCreate2CellSecrets(cell, mock.Mock())
 
-        self.assertEqual(self.circuit._hs, None)
+        self.assertEqual(self.circuit._hs_state, None)
         self.assertEqual(self.circuit._crypt_path, ['test'])
+        mock_drc.assert_called_once_with('hs_state', cell)
 
     @mock.patch('oppy.connection.connection.Connection', autospec=True)
     def test_deriveCreate2CellSecrets_DestroyCell(self, conn):
@@ -517,8 +522,8 @@ class CircuitBuildTaskTest(unittest.TestCase):
         self.circuit._conn = conn
         ret = mock.Mock()
         dcm.return_value = ret
-        self.circuit._hs = mock.Mock()
-        self.circuit._hs.deriveRelayCrypto.return_value = 'test'
+        self.circuit._hs_state = mock.Mock()
+        self.circuit._hs_state.deriveRelayCrypto.return_value = 'test'
 
         cell = RelayExtended2Cell('test')
 
@@ -530,10 +535,10 @@ class CircuitBuildTaskTest(unittest.TestCase):
 
     @mock.patch('oppy.connection.connection.Connection', autospec=True)
     @mock.patch('oppy.circuit.circuitbuildtask.LinkSpecifier', autospec=True)
-    @mock.patch('oppy.circuit.circuitbuildtask.NTorHandshake', autospec=True)
+    @mock.patch('oppy.circuit.circuitbuildtask.ntor.NTorState', autospec=True)
     @mock.patch('oppy.circuit.circuitbuildtask.RelayExtend2Cell.make')
     @mock.patch('oppy.crypto.util.encryptCell')
-    def test_sendExtend2Cell(self, enc, re2m, nths, lspec, conn):
+    def test_sendExtend2Cell(self, enc, re2m, nt, lspec, conn):
         mock_cell = mock.Mock()
         enc.return_value = mock_cell
         self.circuit._conn = conn
@@ -544,11 +549,12 @@ class CircuitBuildTaskTest(unittest.TestCase):
 
     # mock: decrypt, derive relay crypto
     @mock.patch('oppy.crypto.util.decryptCell')
-    @mock.patch('oppy.circuit.circuitbuildtask.NTorHandshake', autospec=True)
-    def test_deriveExtend2CellSecrets(self, nths, dec):
+    @mock.patch('oppy.circuit.circuitbuildtask.ntor.NTorState', autospec=True)
+    @mock.patch('oppy.circuit.circuitbuildtask.ntor.deriveRelayCrypto',
+        return_value='tval')
+    def test_deriveExtend2CellSecrets(self, drc, nths, dec):
         cell = RelayExtended2Cell(ID)
-        self.circuit._hs = nths
-        self.circuit._hs.deriveRelayCrypto.return_value = 'tval'
+        self.circuit._hs_state = nths
         self.circuit._crypt_path = []
         mock_response = mock.Mock()
         dec.return_value = (cell, 1)
