@@ -9,7 +9,7 @@ from twisted.python.failure import Failure
 
 import oppy.crypto.util as crypto
 import oppy.path.path as path
-import crypto.ntor as ntor
+import oppy.crypto.ntor as ntor
 
 from oppy.cell.fixedlen import Create2Cell, Created2Cell, DestroyCell
 from oppy.cell.relay import RelayExtend2Cell, RelayExtended2Cell
