@@ -14,17 +14,6 @@ def decodeMicrodescriptorIdentifier(microdescriptor):
     return base64.b64decode(ident).rstrip('=')
 
 
-def signingKeyToSHA1(signing_key):
-    '''Return the SHA-1 digest of *signing_key*.
-
-    :param str signing_key: a relay's signing key
-    :returns: **str** the SHA-1 digest of this signing_key
-    '''
-    m = hashlib.sha1()
-    m.update(base64.b64decode(''.join(signing_key.split('\n')[1:4])))
-    return m.digest()
-
-
 def enum(**enums):
     return type('Enum', (), enums)
 

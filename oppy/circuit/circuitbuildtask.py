@@ -9,13 +9,13 @@ from twisted.python.failure import Failure
 
 import oppy.crypto.util as crypto
 import oppy.path.path as path
+import crypto.ntor as ntor
 
 from oppy.cell.fixedlen import Create2Cell, Created2Cell, DestroyCell
 from oppy.cell.relay import RelayExtend2Cell, RelayExtended2Cell
 from oppy.cell.util import LinkSpecifier
 from oppy.circuit.circuit import Circuit
 from oppy.circuit.definitions import CircuitType
-from oppy.crypto.ntorhandshake import NTorHandshake
 
 
 # Major TODO's:
@@ -38,7 +38,7 @@ class CircuitBuildTask(object):
         self.circuit_id = _id
         self.circuit_type = circuit_type
         self.request = request
-        self._hs = None
+        self._hs_state = None
         self._path = None
         self._conn = None
         self._crypt_path = []
@@ -125,8 +125,8 @@ class CircuitBuildTask(object):
         return d
 
     def _sendCreate2Cell(self, _, path_node):
-        self._hs = NTorHandshake(path_node.microdescriptor)
-        onion_skin = self._hs.createOnionSkin()
+        self._hs_state = ntor.NTorState(path_node.microdescriptor)
+        onion_skin = ntor.createOnionSkin(self._hs_state)
         create2 = Create2Cell.make(self.circuit_id, hdata=onion_skin)
         self._conn.send(create2)
 
@@ -143,14 +143,17 @@ class CircuitBuildTask(object):
             self._conn.send(destroy)
             raise ValueError(msg)
 
-        self._crypt_path.append(self._hs.deriveRelayCrypto(response))
-        self._hs = None
+        self._crypt_path.append(ntor.deriveRelayCrypto(self._hs_state,
+            response))
+        # TODO: implement this
+        #self._hs_state.memwipe()
+        self._hs_state = None
 
     def _sendExtend2Cell(self, _, path_node):
         lspecs = [LinkSpecifier(path_node),
                   LinkSpecifier(path_node, legacy=True)]
-        self._hs = NTorHandshake(path_node.microdescriptor)
-        onion_skin = self._hs.createOnionSkin()
+        self._hs_state = ntor.NTorState(path_node.microdescriptor)
+        onion_skin = ntor.createOnionSkin(self._hs_state)
         extend2 = RelayExtend2Cell.make(self.circuit_id, nspec=len(lspecs),
                                         lspecs=lspecs, hdata=onion_skin)
         crypt_cell = crypto.encryptCell(extend2, self._crypt_path,
@@ -174,7 +177,9 @@ class CircuitBuildTask(object):
             self._conn.send(destroy)
             raise ValueError(msg)
 
-        self._crypt_path.append(self._hs.deriveRelayCrypto(cell))
+        self._crypt_path.append(ntor.deriveRelayCrypto(self._hs_state, cell))
+        # TODO: implement this
+        #self._hs_state.memwipe()
         self._hs = None
 
     def _buildSucceeded(self, _):

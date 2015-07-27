@@ -17,6 +17,7 @@ import hashlib
 import hmac
 import struct
 
+from collections import namedtuple
 from datetime import datetime
 from itertools import izip
 
@@ -28,15 +29,21 @@ from Crypto.Util import asn1, Counter
 from oppy.cell.cell import Cell
 from oppy.cell.definitions import RECOGNIZED, EMPTY_DIGEST
 from oppy.cell.fixedlen import EncryptedCell
-from oppy.crypto.exceptions import UnrecognizedCell
+
+
+class UnrecognizedCell(Exception):
+    pass
+
+
+RelayCrypto = namedtuple("RelayCrypto", ("forward_digest",
+                                         "backward_digest",
+                                         "forward_cipher",
+                                         "backward_cipher"))
 
 
 def constantStrEqual(str1, str2):
     '''Do a constant-time comparison of str1 and str2, returning **True**
     if they are equal, **False** otherwise.
-
-    Use built-in hmac.compare_digest if it's available, otherwise custom
-    constant-time comparison.
 
     :param str str1: first string to compare
     :param str str2: second string to compare
@@ -45,13 +52,11 @@ def constantStrEqual(str1, str2):
     try:
         from hmac import compare_digest
         return compare_digest(str1, str2)
-    # use our own constant time equality comparison if no stdlib version
     except ImportError:
         pass
 
     if len(str1) != len(str2):
-        # we've already failed at this point, but loop through
-        # all chars anyway
+        # we've already failed at this point, but loop anyway
         res = 1
         comp1 = bytearray(str2)
         comp2 = bytearray(str2)
@@ -166,7 +171,6 @@ def cellRecognized(payload, relay_crypto):
 
 
 # TODO: fix documentation
-# XXX why does this have an 'origin' param? i think we can scrap this
 def decryptCell(cell, crypt_path):
     '''Decrypt *cell* until it is recognized or we've tried all RelayCrypto's
     in *crypt_path*.
@@ -191,19 +195,19 @@ def decryptCell(cell, crypt_path):
             break
         origin += 1
 
-    if recognized:
-        updated_payload = makePayloadWithDigest(payload)
-        crypt_path[origin].backward_digest.update(updated_payload)
-        if cell.header.link_version < 4:
-            cid = struct.pack('!H', cell.header.circ_id)
-        else:
-            cid = struct.pack('!I', cell.header.circ_id)
-        cmd = struct.pack('!B', cell.header.cmd)
-
-        dec = Cell.parse(cid + cmd + payload)
-        return (dec, origin)
-    else:
+    if not recognized:
         raise UnrecognizedCell()
+
+    updated_payload = makePayloadWithDigest(payload)
+    crypt_path[origin].backward_digest.update(updated_payload)
+    if cell.header.link_version < 4:
+        cid = struct.pack('!H', cell.header.circ_id)
+    else:
+        cid = struct.pack('!I', cell.header.circ_id)
+    cmd = struct.pack('!B', cell.header.cmd)
+
+    dec = Cell.parse(cid + cmd + payload)
+    return (dec, origin)
 
 
 def verifyCertSig(id_cert, cert_to_verify, algo='sha1'):
@@ -235,7 +239,9 @@ def verifyCertSig(id_cert, cert_to_verify, algo='sha1'):
     sig = sig_DER.payload
 
     # first byte is number of unused bytes. should be zero
-    assert sig[0] == '\x00'
+    if sig[0] != '\x00':
+        return False
+
     sig = sig[1:]
 
     try:
