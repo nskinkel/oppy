@@ -104,13 +104,14 @@ def makeHMACSHA256(msg, key):
     return t.digest()
 
 
-def makePayloadWithDigest(payload, digest=EMPTY_DIGEST):
+def _makePayloadWithDigest(payload, digest=EMPTY_DIGEST):
     '''Make a new payload with *digest* inserted in the correct position.
 
     :param str payload: payload in which to insert digest
     :param str digest: digest to insert
     :returns: **str** payload with digest inserted into correct position
     '''
+    assert len(payload) >= 9 and len(digest) == 4
     DIGEST_START = 5
     DIGEST_END = 9
     return payload[:DIGEST_START] + digest + payload[DIGEST_END:]
@@ -143,7 +144,7 @@ def encryptCell(cell, crypt_path, early=False):
     return EncryptedCell.make(cell.header.circ_id, payload, early=early)
 
 
-def cellRecognized(payload, relay_crypto):
+def _cellRecognized(payload, relay_crypto):
     '''Return **True** if this payload is *recognized*.
 
     .. note:: See tor-spec Section 6.1 for details about what it means for a
@@ -155,14 +156,10 @@ def cellRecognized(payload, relay_crypto):
     :returns: **bool** **True** if this payload is recognized, **False**
         otherwise
     '''
-    test_payload = payload
-    recognized = test_payload[2:4]
-    digest = test_payload[5:9]
-    test_payload = makePayloadWithDigest(test_payload)
-
-    if recognized != RECOGNIZED:
+    if len(payload) < 9 or payload[2:4] != RECOGNIZED:
         return False
-
+    digest = payload[5:9]
+    test_payload = _makePayloadWithDigest(payload)
     test_digest = relay_crypto.backward_digest.copy()
     test_digest.update(test_payload)
     # no danger of timing attack here since we just
@@ -190,7 +187,7 @@ def decryptCell(cell, crypt_path):
 
     for node in crypt_path:
         payload = node.backward_cipher.decrypt(payload)
-        if cellRecognized(payload, node):
+        if _cellRecognized(payload, node):
             recognized = True
             break
         origin += 1
@@ -198,7 +195,7 @@ def decryptCell(cell, crypt_path):
     if not recognized:
         raise UnrecognizedCell()
 
-    updated_payload = makePayloadWithDigest(payload)
+    updated_payload = _makePayloadWithDigest(payload)
     crypt_path[origin].backward_digest.update(updated_payload)
     if cell.header.link_version < 4:
         cid = struct.pack('!H', cell.header.circ_id)
@@ -261,6 +258,9 @@ def validCertTime(cert):
         **False** otherwise
     '''
     now = datetime.now()
-    validAfter = datetime.strptime(cert.get_notBefore(), '%Y%m%d%H%M%SZ')
-    validUntil = datetime.strptime(cert.get_notAfter(), '%Y%m%d%H%M%SZ')
-    return validAfter < now < validUntil
+    try:
+        validAfter = datetime.strptime(cert.get_notBefore(), '%Y%m%d%H%M%SZ')
+        validUntil = datetime.strptime(cert.get_notAfter(), '%Y%m%d%H%M%SZ')
+        return validAfter < now < validUntil
+    except ValueError:
+        return False
