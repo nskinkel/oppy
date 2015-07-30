@@ -1,9 +1,8 @@
 # Copyright 2014, 2015, Nik Kinkel
 # See LICENSE for licensing information
 
-import struct
-
 import ipaddress
+import struct
 
 
 class ExitRequest(object):
@@ -49,9 +48,3 @@ class ExitRequest(object):
             ret = "{}:{}".format(self.host, self.port)
         ret += "\x00"
         return ret
-
-    def __repr__(self):
-        msg = "ExitRequest(port={}, addr={}, host={}, is_ipv4={}, "
-        msg += "is_ipv6={}, is_host={}"
-        return msg.format(self.port, self.addr, self.host,
-                          self.is_ipv4, self.is_ipv6, self.is_host)

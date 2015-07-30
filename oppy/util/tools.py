@@ -2,7 +2,6 @@
 # See LICENSE for licensing information
 
 import base64
-import hashlib
 import itertools
 
 
