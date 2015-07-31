@@ -22,6 +22,13 @@ WINDOW_SIZE = 100
 CState = enum(
     OPEN=0,
     BUFFERING=1,
+    CLOSED=2,
+)
+
+
+CUsage = enum(
+    CLEAN=0,
+    DIRTY=1,
 )
 
 
