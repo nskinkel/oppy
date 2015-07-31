@@ -181,6 +181,10 @@ def decryptCell(cell, crypt_path):
     :param int origin: the originating hop we think this cell came from
     :returns: the concrete RelayCell type of this decrypted cell
     '''
+    if not isinstance(cell, EncryptedCell):
+        raise ValueError("decryptCell expected an EncryptedCell, got {}."
+            .format(type(cell)))
+
     origin = 0
     recognized = False
     payload = cell.getPayload()
