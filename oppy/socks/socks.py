@@ -254,9 +254,9 @@ class OppySOCKSProtocol(Protocol):
         # manager exists, a SOCKS object will get a stream that has no
         # stream id. in this case just skip logging and closing that
         # stream and let it die
-        if self.stream is not None and hasattr(self.stream, 'stream_id'):
+        if self.stream is not None and hasattr(self.stream, 'id'):
             msg = "SOCKS on stream id {} is done with its local connection."
-            logging.debug(msg.format(self.stream.stream_id))
+            logging.debug(msg.format(self.stream.id))
             self.stream.closeFromSOCKS()
 
     def connectionMade(self):
