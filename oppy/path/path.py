@@ -191,7 +191,7 @@ def exitFilter(exit_fprint, cons_rel_stats, descriptors, fast, stable,
     elif port is not None:
         return desc.exit_policy.can_exit_to(port=port)
     else:
-        return desc.exit_policy.is_exiting_allowed
+        return desc.exit_policy.is_exiting_allowed()
 
 def guardFilter(guard, cons_rel_stats, descriptors, fast, stable, exit_desc,
                 exit_status_entry):
