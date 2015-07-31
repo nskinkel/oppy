@@ -115,8 +115,7 @@ class CircuitManager(object):
 
         try:
             c = random.choice(self._getOpenCandidates(request))
-            msg = "Assigning request to circuit {}.".format(c.circuit_id)
-            logging.debug(msg)
+            logging.debug("Assigning request to circuit {}.".format(c.id))
             d.callback(c)
         except IndexError:
             if len(self._getPendingCandidates(request)) == 0:
@@ -151,7 +150,7 @@ class CircuitManager(object):
             should be destroyed, **False** otherwise.
         '''
         # TODO: update for more kinds of circuits
-        if circuit.circuit_type == CircuitType.IPv4:
+        if circuit.state.type == CircuitType.IPv4:
             return self._totalIPv4Count()-1 > self._min_IPv4_count
         else:
             return self._totalIPv6Count()-1 > self._min_IPv6_count
@@ -188,16 +187,12 @@ class CircuitManager(object):
         :param circuit_id: id of circuit to be destroyed
         :type circuit_id: int
         '''
-        cid = circuit.circuit_id
+        cid = circuit.id
         try:
             del self._circuit_build_task_dict[cid]
-            msg = "Destroyed CircuitBuildTask {}.".format(cid)
-            logging.debug(msg)
         except KeyError:
             try:
                 del self._open_circuit_dict[cid]
-                msg = "Destroyed open circuit {}.".format(cid)
-                logging.debug(msg)
             except KeyError:
                 msg = ("Circuit manager was notified that circuit {} was "
                        "destroyed, but manager has no reference to that "
@@ -229,18 +224,18 @@ class CircuitManager(object):
             has just opened.
         '''
         msg = ("Circuit manager notified that circuit {} opened."
-               .format(circuit.circuit_id))
+               .format(circuit.id))
         logging.debug(msg)
 
         try:
-            del self._circuit_build_task_dict[circuit.circuit_id]
+            del self._circuit_build_task_dict[circuit.id]
         except KeyError:
             msg = ("Circuit manager has no reference to circuit {}."
-                   .format(circuit.circuit_id))
+                   .format(circuit.id))
             logging.debug(msg)
             return
 
-        self._open_circuit_dict[circuit.circuit_id] = circuit
+        self._open_circuit_dict[circuit.id] = circuit
         self._assignPossiblePendingRequestsToCircuit(circuit)
         self._notifyUserCircuitOpened()
 
@@ -310,7 +305,7 @@ class CircuitManager(object):
             request = pending_stream.stream.request
             if circuit.canHandleRequest(request):
                 msg = ("Assigning pending request to opened circuit {}."
-                       .format(circuit.circuit_id))
+                       .format(circuit.id))
                 logging.debug(msg)
                 pending_stream.deferred.callback(circuit)
                 self._pending_stream_list.remove(pending_stream)
@@ -338,7 +333,7 @@ class CircuitManager(object):
         :returns: **int** number of open IPv4 circuits
         '''
         return len([i for i in self._open_circuit_dict.values()
-                    if i.circuit_type == CircuitType.IPv4])
+                    if i.state.type == CircuitType.IPv4])
 
     def _openIPv6Count(self):
         '''Return the number of open IPv6 circuits.
@@ -346,7 +341,7 @@ class CircuitManager(object):
         :returns: **int** number of open IPv6 circuits.
         '''
         return len([i for i in self._open_circuit_dict.values()
-                    if i.circuit_type == CircuitType.IPv6])
+                    if i.state.type == CircuitType.IPv6])
 
     def _pendingIPv4Count(self):
         '''Return the number of pending IPv4 circuits.
