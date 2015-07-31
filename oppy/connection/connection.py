@@ -84,7 +84,7 @@ class Connection(Protocol):
         :param oppy.circuit.circuit.Circuit circuit: circuit to add to this
             connection's circuit map
         '''
-        self._circuit_dict[circuit.circuit_id] = circuit
+        self._circuit_dict[circuit.id] = circuit
 
     def closeConnection(self):
         '''Close this connection and all associated circuits; notify the
@@ -131,12 +131,12 @@ class Connection(Protocol):
         :param int circuit_id: id of the circuit that was destroyed
         '''
         try:
-            del self._circuit_dict[circuit.circuit_id]
+            del self._circuit_dict[circuit.id]
         except KeyError:
             msg = ("Connection to {} notified circuit {} was destroyed, but "
                    "the connection has no reference to that circuit."
                    .format(self.micro_status_entry.fingerprint,
-                           circuit.circuit_id))
+                           circuit.id))
             logging.debug(msg)
             return
 
