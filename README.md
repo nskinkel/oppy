@@ -3,8 +3,7 @@
 [![Coverage Status](https://coveralls.io/repos/nskinkel/oppy/badge.svg?branch=master)](https://coveralls.io/r/nskinkel/oppy?branch=master)
 
 #oppy
-`oppy` is a Tor onion proxy implementation written in Python. oppy does not 
-implement Onion Routing functionality. Any further references to "Tor" or "tor"
+`oppy` is a Tor onion proxy implementation written in Python. Any further references to "Tor" or "tor"
 refer to the protocol, unless otherwise noted, and do not imply endorsement
 from The Tor Project organization. `oppy` is produced independently from the
 Tor® anonymity software and carries no guarantee from The Tor Project about
