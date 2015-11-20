@@ -21,7 +21,7 @@ For full documentation, see: [oppy-docs](https://nskinkel.github.com/oppy)
 ###Warning
 `oppy` is provided in the hope it will be useful, however **oppy will NOT
 provide strong anonymity**. `oppy` is just a prototype: it's not very well
-tested yet, and it makes a number of simplifications (see: simplifications.md).
+tested yet, and it makes a number of simplifications.
 
 If you need strong anonymity, please use the
 [official Tor software](https://www.torproject.org/download/download-easy.html)
@@ -32,25 +32,12 @@ with.
 
 
 ###Installation
-`oppy` needs a few packages to run (see REQUIREMENTS), including a new version
-of `pynacl` not yet present in pypi. So first clone the `pynacl` repo and
-follow the installation instructions:
 
-```
-$ git clone https://github.com/pyca/pynacl
-```
+First, install the dependencies:
 
-Then install the following additional packages (these are all available in
-pypi):
-
-```
-twisted >= 14.0
-stem
-ipaddress
-hkdf
-pycrypto
-pyopenssl
-```
+`
+$ pip -r requirements.txt
+`
 
 Now you're ready to clone this repository:
 
@@ -58,12 +45,14 @@ Now you're ready to clone this repository:
 $ git clone https://github.com/nskinkel/oppy
 ```
 
-Finally, `cd` into the `oppy` directory, add it to your $PYTHONPATH, and you're
-all set!
+Next, `cd` to the top-level `oppy` directory and add it to your python path
 
 ```
 $ export PYTHONPATH=$PYTHONPATH:$(pwd)
 ```
+
+*Note*: the "top-level" directory that should be added to your python path
+is the directory containing the `oppy`, `docs`, and `data` directories.
 
 ###Usage
 `oppy` aims to be a fully functional Tor client and can be used just the
